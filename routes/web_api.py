@@ -16,6 +16,8 @@ from domain.payment_requests_services import (
     reject_payment_request,
 )
 
+from schemas.payments import TransactionHistoryResponse
+
 from repositories.users_repo import get_user_id_by_phone
 
 from schemas.auth import (
@@ -75,7 +77,7 @@ async def balance_route(conn=Depends(get_db), current_user: dict = Depends(get_c
     return get_balance(conn, user_id=current_user["user_id"])
 
 
-@router.get("/history")
+@router.get("/history", response_model=TransactionHistoryResponse)
 async def history_route(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -170,9 +172,9 @@ async def my_requests(conn=Depends(get_db), current_user: dict = Depends(get_cur
 
 @router.post("/payment_requests/{req_id}/approve", response_model=OperationResponse)
 async def approve_request(
-    req_id: int,
+    req_id: str,
     conn=Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user)
 ):
     result = approve_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
 
@@ -184,9 +186,9 @@ async def approve_request(
 
 @router.post("/payment_requests/{req_id}/reject", response_model=OperationResponse)
 async def reject_request(
-    req_id: int,
+    req_id: str,
     conn=Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user)
 ):
     result = reject_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
 
