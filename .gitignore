@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments (התיקייה של הסביבה הווירטואלית)
+.venv/
+venv/
+ENV/
+env/
+
+# PyCharm / IDE settings (הגדרות של העורך)
+.idea/
+*.swp
+*.bak
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Databases (אם את משתמשת ב-SQLite מקומי)
+*.sqlite3
+
+# Environment variables (קבצים שמכילים ססמאות וטוקנים - חשוב מאוד!)
+.env
+.flaskenv
+
+# Log files
+*.log
