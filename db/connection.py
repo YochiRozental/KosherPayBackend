@@ -1,20 +1,3 @@
-# -*- coding: utf-8 -*-
-# import pymysql
-# from config import DB_CONFIG
-#
-# @contextmanager
-# def get_db_connection():
-#     connection = None
-#     try:
-#         connection = pymysql.connect(**DB_CONFIG)
-#         yield connection
-#     except Exception as e:
-#         print(f"שגיאה בחיבור למסד הנתונים: {e}")
-#         raise ConnectionError("Connection to database failed") from e
-#     finally:
-#         if connection:
-#             connection.close()
-
 from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras

@@ -1,10 +1,9 @@
-# routes/web_api.py
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from typing import Optional
 
 from db.deps import get_db
 from auth.dependencies import get_current_user
 
+from domain.users_service import get_me, update_me
 from domain.onboarding_services import open_account
 from domain.auth_services import authenticate_user
 from domain.wallet_services import get_balance
@@ -16,31 +15,27 @@ from domain.payment_requests_services import (
     reject_payment_request,
 )
 
-from schemas.payments import TransactionHistoryResponse
-
-from repositories.users_repo import get_user_id_by_phone
-
-from schemas.auth import (
-    OpenAccountRequest,
-    OpenAccountResponse,
-    LoginRequest,
-    LoginResponse,
+from repositories.users_repo import (
+    get_user_id_by_phone,
 )
+
+from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payments import (
     DepositRequest,
     WithdrawRequest,
     TransferRequest,
     BalanceResponse,
     OperationResponse,
+    TransactionHistoryResponse,
 )
 from schemas.payment_requests import (
     PaymentRequestRequest,
     PaymentRequestResponse,
     PaymentRequestsListResponse,
 )
+from schemas.users import UpdateMeRequest, UserMeResponse
 
 router = APIRouter(prefix="/api/web", tags=["web"])
-
 
 @router.post("/open_account", response_model=OpenAccountResponse, status_code=status.HTTP_201_CREATED)
 async def open_account_route(request: OpenAccountRequest, conn=Depends(get_db)):
@@ -55,27 +50,22 @@ async def open_account_route(request: OpenAccountRequest, conn=Depends(get_db)):
     )
 
     if not result.get("success"):
-        # 409 במקרה כפילות טלפון
         if result.get("error_code") == "PHONE_ALREADY_EXISTS":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
 
     return result
 
-
 @router.post("/login", response_model=LoginResponse)
 async def login_route(request: LoginRequest, conn=Depends(get_db)):
     result = authenticate_user(conn, request.phone_number, request.secret_code)
-
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result)
-
     return result
 
 @router.get("/balance", response_model=BalanceResponse)
 async def balance_route(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     return get_balance(conn, user_id=current_user["user_id"])
-
 
 @router.get("/history", response_model=TransactionHistoryResponse)
 async def history_route(
@@ -85,7 +75,6 @@ async def history_route(
     current_user: dict = Depends(get_current_user),
 ):
     return get_transaction_history(conn, user_id=current_user["user_id"], limit=limit, offset=offset)
-
 
 @router.post("/deposit", response_model=OperationResponse)
 async def deposit_route(
@@ -98,7 +87,6 @@ async def deposit_route(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
     return result
 
-
 @router.post("/withdraw", response_model=OperationResponse)
 async def withdraw_route(
     request: WithdrawRequest,
@@ -110,15 +98,12 @@ async def withdraw_route(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
     return result
 
-
 @router.post("/transfer", response_model=OperationResponse)
 async def transfer_route(
     request: TransferRequest,
     conn=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    # עדיין מקבלים recipient_phone כדי לא לשבור את ה-Frontend שלך,
-    # אבל מעבירים לדומיין user_id בלבד:
     recipient_id = get_user_id_by_phone(conn, request.recipient_phone)
     if not recipient_id:
         raise HTTPException(
@@ -132,12 +117,10 @@ async def transfer_route(
         to_user_id=recipient_id,
         amount=request.amount,
     )
-
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
 
     return result
-
 
 @router.post("/request_payment", response_model=PaymentRequestResponse)
 async def request_payment_route(
@@ -164,35 +147,60 @@ async def request_payment_route(
 
     return result
 
-
 @router.get("/payment_requests", response_model=PaymentRequestsListResponse)
 async def my_requests(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     return get_my_payment_requests(conn, user_id=current_user["user_id"])
-
 
 @router.post("/payment_requests/{req_id}/approve", response_model=OperationResponse)
 async def approve_request(
     req_id: str,
     conn=Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     result = approve_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
-
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-
     return result
-
 
 @router.post("/payment_requests/{req_id}/reject", response_model=OperationResponse)
 async def reject_request(
     req_id: str,
     conn=Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     result = reject_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
-
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+    return result
 
+# ============================
+# USER PROFILE (ME) - SINGLE SOURCE OF TRUTH
+# ============================
+
+@router.get("/me", response_model=UserMeResponse)
+async def me_route(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
+    result = get_me(conn, user_id=current_user["user_id"])
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result)
+    return result
+
+@router.put("/me", response_model=UserMeResponse)
+async def update_me_route(
+    payload: UpdateMeRequest,
+    conn=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    result = update_me(
+        conn,
+        user_id=current_user["user_id"],
+        name=payload.name,
+        phone=payload.phone,
+        secret_code=payload.secret_code,
+        bank_number=payload.bank_number,
+        branch_number=payload.branch_number,
+        account_number=payload.account_number,
+        account_holder=payload.account_holder,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result)
     return result

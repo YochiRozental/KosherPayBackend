@@ -1,4 +1,3 @@
-# domain/wallet_services.py
 from __future__ import annotations
 from repositories.wallets_repo import get_wallet_by_user_id
 

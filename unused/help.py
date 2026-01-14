@@ -23,7 +23,6 @@ def format_date_for_ivr(dt: datetime.datetime):
     hour = dt.hour
     minute = dt.minute
 
-    # ניסוח שעה
     if minute == 0:
         time_text = f"{hour}"
     else:

@@ -1,4 +1,3 @@
-# domain/onboarding_services.py
 from __future__ import annotations
 
 import psycopg2
@@ -22,7 +21,6 @@ def open_account(
     phone_number = (phone_number or "").strip()
     name = (name or "").strip()
 
-    # בדיקת כפילות לפני ניסיון insert (וגם יש DB constraint אמיתי)
     existing = get_user_id_by_phone(conn, phone_number)
     if existing:
         return {
@@ -105,7 +103,6 @@ def open_account(
         }
 
     except psycopg2.errors.UniqueViolation:
-        # אם יש unique על phone_number או משהו דומה
         return {
             "success": False,
             "message": "מספר טלפון זה כבר קיים במערכת",

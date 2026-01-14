@@ -20,7 +20,6 @@ def create_payment_request(
         )
         return cur.fetchone()
 
-
 def get_pending_requests_for_user(conn, *, user_id: str) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
@@ -34,7 +33,6 @@ def get_pending_requests_for_user(conn, *, user_id: str) -> list[dict]:
             (user_id,),
         )
         return cur.fetchall()
-
 
 def approve_pending_request_atomic(conn, *, request_id: str, recipient_id: str) -> dict | None:
     """
@@ -54,7 +52,6 @@ def approve_pending_request_atomic(conn, *, request_id: str, recipient_id: str) 
             (request_id, recipient_id),
         )
         return cur.fetchone()
-
 
 def reject_pending_request_atomic(conn, *, request_id: str, recipient_id: str) -> bool:
     """

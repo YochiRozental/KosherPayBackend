@@ -1,4 +1,3 @@
-# repositories/transactions_repo.py
 from __future__ import annotations
 import psycopg2.extras
 
@@ -31,7 +30,6 @@ def get_transactions_for_user(
             (user_id, user_id, limit, offset),
         )
         return cur.fetchall()
-
 
 def create_transaction(
     conn,

@@ -111,7 +111,6 @@
 #     return "&".join(parts)
 
 
-# ivr/yemot_session.py
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -122,7 +121,6 @@ from fastapi import Request
 # חנות SESSION בזיכרון (רצוי להחליף לרדיס בפרודקשן)
 SESSION_STORE: dict[str, dict[str, str]] = {}
 
-# TTL כדי למנוע זיכרון מתנפח
 SESSION_TTL_MIN = 60
 SESSION_META: dict[str, datetime] = {}  # call_id -> last_seen (UTC)
 

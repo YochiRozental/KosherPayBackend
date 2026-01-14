@@ -1,13 +1,10 @@
-# auth/dependencies.py
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from auth.jwt import decode_token
+from auth.jwt_utils import decode_token
 
 security = HTTPBearer(auto_error=False)
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> dict:
+async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security),) -> dict:
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -17,10 +14,10 @@ async def get_current_user(
     token = credentials.credentials
     try:
         payload = decode_token(token)
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"success": False, "message": "Invalid token"},
+            detail=f"Invalid token: {type(e).__name__}: {str(e)}"
         )
 
     if payload.get("type") != "access":

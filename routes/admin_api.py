@@ -1,4 +1,3 @@
-# routes/admin_api.py
 from fastapi import APIRouter, Depends, HTTPException, status
 import psycopg2.extras
 
