@@ -20,6 +20,9 @@ JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 ACCESS_TTL_MIN = int(os.environ.get("JWT_ACCESS_TTL_MIN", "30"))
 REFRESH_TTL_DAYS = int(os.environ.get("JWT_REFRESH_TTL_DAYS", "14"))
 
+if JWT_ALGORITHM not in {"HS256"}:
+    raise RuntimeError("Unsupported JWT_ALGORITHM (allowed: HS256)")
+
 def _now() -> int:
     return int(time.time())
 
@@ -92,12 +95,6 @@ def decode_token(token: str) -> dict[str, Any]:
         )
     except pyjwt.ExpiredSignatureError as e:
         raise ExpiredTokenError("Token expired") from e
-    except pyjwt.InvalidIssuerError as e:
-        raise InvalidTokenError("Invalid issuer") from e
-    except pyjwt.InvalidAlgorithmError as e:
-        raise InvalidTokenError("Invalid algorithm") from e
-    except pyjwt.DecodeError as e:
-        raise InvalidTokenError("Decode error") from e
     except pyjwt.InvalidTokenError as e:
         raise InvalidTokenError("Invalid token") from e
 

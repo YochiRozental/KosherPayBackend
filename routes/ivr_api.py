@@ -466,7 +466,7 @@ from ivr.yemot_session import init_yemot_session
 from ivr.yemot_helpers import yemot_read
 
 # אם את עדיין משתמשת ב-auth הישן ל-IVR:
-from unused.core import authenticate_user  # אפשר להחליף בהמשך לדומיין החדש
+# from unused.core import authenticate_user  # אפשר להחליף בהמשך לדומיין החדש
 
 router = APIRouter(prefix="/ivr", tags=["ivr"])
 
@@ -501,11 +501,11 @@ async def ivr_entry(request: Request):
         # אבל ב-ivr הישן את קוראת עם (phone, id, secret).
         # לכן פה אני קוראת בשיטה שתואמת לקובץ unused.core אצלך (שם זה phone+secret).
         # אם אצלך יש עדיין גרסה עם 3 פרמטרים — תשני בהתאם.
-        auth_result = authenticate_user(phone_number, secret_code)
+        # auth_result = authenticate_user(phone_number, secret_code)
 
-        if auth_result.get("authenticated"):
-            return "go_to_folder=/2"
-        return "אחד או יותר מהנתונים שהוקשו לא נכונים"
+        # if auth_result.get("authenticated"):
+        #     return "go_to_folder=/2"
+        # return "אחד או יותר מהנתונים שהוקשו לא נכונים"
 
     # ברירת מחדל:
     return "id_list_message=t-פעולה לא נתמכת&go_to_folder=../"
