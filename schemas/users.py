@@ -1,9 +1,12 @@
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, Field
+
 
 class UserMeResponse(BaseModel):
     success: bool
     user: dict
+
 
 class UpdateMeRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1)

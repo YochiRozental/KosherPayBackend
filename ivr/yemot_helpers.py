@@ -1,11 +1,11 @@
 from datetime import timedelta
 
+
 # def yemot_read(text, param, min_len, max_len, timeout=10, read_type="Digits"):
 #     second_part = f"{param},,{max_len},{min_len},{timeout},{read_type},,,,,,,,,no"
 #     return f"read=t-{text}={second_part}"
 
 def yemot_read(text, param, min_len, max_len, timeout=10, read_type="Digits", confirm=True):
-
     confirm_value = "yes" if confirm else "no"
 
     second_part = (
@@ -21,6 +21,7 @@ STATUS_HE = {
     "rejected": "נדחתה",
     "paid": "שולמה",
 }
+
 
 def get_history_range(choice, session, now):
     if choice == "1":  # היום

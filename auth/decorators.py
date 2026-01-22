@@ -1,7 +1,9 @@
 from functools import wraps
+
 from flask import request, jsonify, g
 
 from auth.jwt_utils import decode_token, ExpiredTokenError, InvalidTokenError
+
 
 def require_auth(fn):
     @wraps(fn)
@@ -38,6 +40,7 @@ def require_auth(fn):
 
     return wrapper
 
+
 def require_admin(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -46,4 +49,5 @@ def require_admin(fn):
         if g.user.get("role") != "admin":
             return jsonify({"success": False, "message": "Forbidden"}), 403
         return fn(*args, **kwargs)
+
     return wrapper

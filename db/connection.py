@@ -1,7 +1,9 @@
+import os
 from contextlib import contextmanager
+
 import psycopg2
 import psycopg2.extras
-import os
+
 
 @contextmanager
 def get_db_connection():

@@ -49,14 +49,14 @@
 #     return f"id_list_message=t-{fail_text}&go_to_folder=../"
 
 
-
 # ivr/yemot_actions.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from fastapi import Request
 
+from fastapi import Request
 from unused.help import format_date_for_ivr
+
 from ivr.yemot_helpers import yemot_read
 from ivr.yemot_session import get_session
 
@@ -91,12 +91,12 @@ def format_history_line(tr: dict) -> str:
 
 
 def handle_payment_action(
-    request: Request,
-    phone_number: str,
-    action_func,
-    success_text: str,
-    fail_text: str,
-    clear_session: bool = False,
+        request: Request,
+        phone_number: str,
+        action_func,
+        success_text: str,
+        fail_text: str,
+        clear_session: bool = False,
 ):
     session = get_session(request)
     req_id = session.get("req_id")

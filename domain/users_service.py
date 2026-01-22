@@ -1,8 +1,9 @@
 from __future__ import annotations
-import psycopg2
 
 import re
 from typing import Any, Mapping
+
+import psycopg2
 
 from repositories.users_repo import (
     get_user_profile_by_id,
@@ -10,6 +11,7 @@ from repositories.users_repo import (
 )
 
 _PHONE_RE = re.compile(r"^0\d{8,9}$")
+
 
 def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
     """
@@ -28,6 +30,7 @@ def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
         },
     }
 
+
 def get_me(conn, *, user_id: str) -> dict[str, Any]:
     """
     מחזיר פרופיל משתמש מלא (שם/תפקיד/טלפון/בנק) לפי user_id.
@@ -41,17 +44,18 @@ def get_me(conn, *, user_id: str) -> dict[str, Any]:
         "user": _to_user_me(profile),
     }
 
+
 def update_me(
-    conn,
-    *,
-    user_id: str,
-    name: str | None = None,
-    phone: str | None = None,
-    secret_code: str | None = None,
-    bank_number: str | None = None,
-    branch_number: str | None = None,
-    account_number: str | None = None,
-    account_holder: str | None = None,
+        conn,
+        *,
+        user_id: str,
+        name: str | None = None,
+        phone: str | None = None,
+        secret_code: str | None = None,
+        bank_number: str | None = None,
+        branch_number: str | None = None,
+        account_number: str | None = None,
+        account_holder: str | None = None,
 ) -> dict[str, Any]:
     """
         Update authenticated user profile.

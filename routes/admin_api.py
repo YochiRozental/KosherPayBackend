@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
 import psycopg2.extras
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from db.deps import get_db
 from auth.dependencies import require_admin
+from db.deps import get_db
 from schemas.admin import UsersListResponse
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
 
 @router.get("/users", response_model=UsersListResponse)
 async def get_all_users(conn=Depends(get_db), _admin: dict = Depends(require_admin)):
@@ -13,20 +14,18 @@ async def get_all_users(conn=Depends(get_db), _admin: dict = Depends(require_adm
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT
-                    u.id,
-                    u.name,
-                    u.id_number,
-                    u.role,
-                    u.status,
-                    up.phone_number,
-                    w.current_balance AS balance,
-                    w.currency
+                SELECT u.id,
+                       u.name,
+                       u.role,
+                       u.status,
+                       up.phone_number,
+                       w.current_balance AS balance,
+                       w.currency
                 FROM users u
-                LEFT JOIN user_phones up
-                       ON up.user_id = u.id AND up.is_primary = TRUE
-                LEFT JOIN wallets w
-                       ON w.user_id = u.id
+                         LEFT JOIN user_phones up
+                                   ON up.user_id = u.id AND up.is_primary = TRUE
+                         LEFT JOIN wallets w
+                                   ON w.user_id = u.id
                 ORDER BY u.id DESC
                 """
             )

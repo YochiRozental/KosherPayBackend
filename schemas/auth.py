@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class OpenAccountRequest(BaseModel):
     phone_number: str = Field(..., min_length=1)
     secret_code: str = Field(..., min_length=1)
@@ -8,6 +9,7 @@ class OpenAccountRequest(BaseModel):
     branch_number: str = Field(..., min_length=1)
     account_number: str = Field(..., min_length=1)
 
+
 class OpenAccountResponse(BaseModel):
     success: bool
     message: str
@@ -15,9 +17,11 @@ class OpenAccountResponse(BaseModel):
     bank_account_id: str | None = None
     error_code: str | None = None
 
+
 class LoginRequest(BaseModel):
     phone_number: str = Field(..., min_length=1)
     secret_code: str = Field(..., min_length=1)
+
 
 class LoginResponse(BaseModel):
     success: bool

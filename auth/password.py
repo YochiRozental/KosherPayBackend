@@ -1,11 +1,12 @@
-import bcrypt
 import logging
-
 from typing import Final
+
+import bcrypt
 
 logger = logging.getLogger(__name__)
 
 _ENCODING: Final[str] = "utf-8"
+
 
 def verify_secret(secret: str, secret_hash: str) -> bool:
     try:
@@ -16,6 +17,7 @@ def verify_secret(secret: str, secret_hash: str) -> bool:
     except (ValueError, TypeError) as e:
         logger.warning("bcrypt verification failed: %s", e)
         return False
+
 
 def hash_secret(secret: str) -> str:
     return bcrypt.hashpw(

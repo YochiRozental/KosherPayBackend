@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 import time
-import jwt as pyjwt
-
 from typing import Any, Mapping, Optional
+
+import jwt as pyjwt
 
 # =========================
 # Config
@@ -23,8 +23,10 @@ REFRESH_TTL_DAYS = int(os.environ.get("JWT_REFRESH_TTL_DAYS", "14"))
 if JWT_ALGORITHM not in {"HS256"}:
     raise RuntimeError("Unsupported JWT_ALGORITHM (allowed: HS256)")
 
+
 def _now() -> int:
     return int(time.time())
+
 
 # =========================
 # Project exceptions
@@ -33,14 +35,18 @@ def _now() -> int:
 class JWTError(Exception):
     """Base JWT exception for this project."""
 
+
 class InvalidTokenError(JWTError):
     """Token is invalid (bad signature, malformed, wrong issuer, etc.)."""
+
 
 class ExpiredTokenError(JWTError):
     """Token has expired."""
 
+
 class InvalidTokenTypeError(JWTError):
     """Token 'type' claim is missing/invalid."""
+
 
 # =========================
 # Token creation
@@ -65,6 +71,7 @@ def create_access_token(*, user_id: str, role: str, phone_number: Optional[str] 
     token = pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token.decode("utf-8") if isinstance(token, bytes) else token
 
+
 def create_refresh_token(*, user_id: str) -> str:
     iat = _now()
     exp = iat + REFRESH_TTL_DAYS * 24 * 60 * 60
@@ -79,6 +86,7 @@ def create_refresh_token(*, user_id: str) -> str:
 
     token = pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token.decode("utf-8") if isinstance(token, bytes) else token
+
 
 # =========================
 # Token decoding / validation
@@ -102,6 +110,7 @@ def decode_token(token: str) -> dict[str, Any]:
         raise InvalidTokenError("Invalid payload type")
 
     return dict(payload)
+
 
 def require_token_type(payload: Mapping[str, Any], expected: str) -> None:
     t = payload.get("type")

@@ -1,13 +1,15 @@
 from __future__ import annotations
-from datetime import datetime, timezone
-import os
 
-from auth.password import verify_secret
+import os
+from datetime import datetime, timezone
+
 from auth.jwt_utils import create_access_token, create_refresh_token
+from auth.password import verify_secret
 from repositories.users_repo import get_user_for_auth, bump_failed_login, reset_failed_login
 
 AUTH_MAX_FAILED = int(os.environ.get("AUTH_MAX_FAILED", "5"))
 AUTH_LOCK_MINUTES = int(os.environ.get("AUTH_LOCK_MINUTES", "15"))
+
 
 def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
     phone_number = (phone_number or "").strip()

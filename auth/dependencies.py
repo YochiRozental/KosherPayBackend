@@ -17,6 +17,7 @@ from auth.jwt_utils import (
 logger = logging.getLogger("kosherpay.auth")
 security = HTTPBearer(auto_error=False)
 
+
 def _unauthorized(message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -24,8 +25,9 @@ def _unauthorized(message: str) -> HTTPException:
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Security(security),
+        credentials: HTTPAuthorizationCredentials | None = Security(security),
 ) -> dict[str, Any]:
     if not credentials or not credentials.credentials:
         raise _unauthorized("Missing Bearer token")
@@ -57,6 +59,7 @@ async def get_current_user(
         "role": role,
         "phone": payload.get("phone"),
     }
+
 
 async def require_admin(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     if current_user.get("role") != "admin":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import os
@@ -13,7 +14,6 @@ from fastapi.responses import JSONResponse
 from routes.web_api import router as web_router
 from routes.admin_api import router as admin_router
 from routes.ivr_api import router as ivr_router
-
 
 # -------------------------
 # Logging
@@ -36,17 +36,20 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 # -------------------------
 # Exception handling
 # -------------------------
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request):
-    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
         content={"success": False, "message": "Internal Server Error"},
     )
+
 
 # -------------------------
 # CORS
@@ -66,6 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # -------------------------
 # Routes
 # -------------------------
@@ -73,10 +77,12 @@ app.add_middleware(
 async def health():
     return {"status": "ok", "service": "kosherpay-backend"}
 
+
 app.include_router(web_router)
 app.include_router(admin_router)
 app.include_router(ivr_router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
