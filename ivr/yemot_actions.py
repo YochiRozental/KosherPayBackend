@@ -55,7 +55,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fastapi import Request
-from unused.help import format_date_for_ivr
+# from unused.help import format_date_for_ivr
 
 from ivr.yemot_helpers import yemot_read
 from ivr.yemot_session import get_session
@@ -84,10 +84,10 @@ def get_pending_requests(result: dict):
 def format_history_line(tr: dict) -> str:
     desc = tr["description"].replace(".", " ").replace("-", " ")
     dt = tr.get("created_at") or tr.get("transaction_date")
-    if isinstance(dt, str):
-        # התאימי לפורמט המוחזר אצלך אם צריך
-        dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
-    return f"{format_date_for_ivr(dt + timedelta(hours=2))}: {desc}"
+    # if isinstance(dt, str):
+    #     # התאימי לפורמט המוחזר אצלך אם צריך
+    #     dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
+    # return f"{format_date_for_ivr(dt + timedelta(hours=2))}: {desc}"
 
 
 def handle_payment_action(

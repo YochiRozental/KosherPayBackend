@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 
 from auth.dependencies import get_current_user
 from db.deps import get_db
-from domain.auth_services import authenticate_user
 from domain.account_creation_services import open_account
+from domain.auth_services import authenticate_user
 from domain.payment_requests_services import (
     request_payment,
     get_my_payment_requests,
@@ -17,6 +17,7 @@ from domain.wallet_services import get_balance
 from repositories.users_repo import (
     get_user_id_by_phone,
 )
+from routes.utils import ensure_success
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
     PaymentRequestRequest,
@@ -86,9 +87,7 @@ async def deposit_route(
         current_user: dict = Depends(get_current_user),
 ):
     result = deposit(conn, user_id=current_user["user_id"], amount=request.amount)
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-    return result
+    return ensure_success(result)
 
 
 @router.post("/withdraw", response_model=OperationResponse)
@@ -98,9 +97,7 @@ async def withdraw_route(
         current_user: dict = Depends(get_current_user),
 ):
     result = withdraw(conn, user_id=current_user["user_id"], amount=request.amount)
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-    return result
+    return ensure_success(result)
 
 
 @router.post("/transfer", response_model=OperationResponse)
@@ -122,10 +119,7 @@ async def transfer_route(
         to_user_id=recipient_id,
         amount=request.amount,
     )
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-
-    return result
+    return ensure_success(result)
 
 
 @router.post("/request_payment", response_model=PaymentRequestResponse)
@@ -147,11 +141,7 @@ async def request_payment_route(
         recipient_id=recipient_id,
         amount=request.amount,
     )
-
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-
-    return result
+    return ensure_success(result)
 
 
 @router.get("/payment_requests", response_model=PaymentRequestsListResponse)
@@ -171,9 +161,7 @@ async def approve_request(
         current_user: dict = Depends(get_current_user),
 ):
     result = approve_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-    return result
+    return ensure_success(result)
 
 
 @router.post("/payment_requests/{req_id}/reject", response_model=OperationResponse)
@@ -183,9 +171,7 @@ async def reject_request(
         current_user: dict = Depends(get_current_user),
 ):
     result = reject_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
-    return result
+    return ensure_success(result)
 
 
 # ============================
@@ -195,9 +181,7 @@ async def reject_request(
 @router.get("/me", response_model=UserMeResponse)
 async def me_route(conn=Depends(get_db), current_user: dict = Depends(get_current_user)):
     result = get_me(conn, user_id=current_user["user_id"])
-    if not result.get("success"):
-        raise HTTPException(status_code=404, detail=result)
-    return result
+    return ensure_success(result, status_code=status.HTTP_404_NOT_FOUND)
 
 
 @router.put("/me", response_model=UserMeResponse)
@@ -217,6 +201,4 @@ async def update_me_route(
         account_number=payload.account_number,
         account_holder=payload.account_holder,
     )
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result)
-    return result
+    return ensure_success(result)
