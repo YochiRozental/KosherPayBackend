@@ -8,9 +8,25 @@ import psycopg2
 from repositories.users_repo import (
     get_user_profile_by_id,
     update_user_profile_by_id,
+    get_user_id_by_phone
 )
 
 _PHONE_RE = re.compile(r"^0\d{8,9}$")
+
+
+def check_user_existence(conn, phone_number: str) -> dict:
+    phone_number = (phone_number or "").strip()
+
+    if not phone_number:
+        return {"success": False, "message": "מספר טלפון חסר"}
+
+    user_id = get_user_id_by_phone(conn, phone_number)
+
+    return {
+        "success": True,
+        "exists": user_id is not None,
+        "user_id": user_id,
+    }
 
 
 def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:

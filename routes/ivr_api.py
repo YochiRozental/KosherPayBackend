@@ -457,55 +457,100 @@
 
 
 # routes/ivr_api.py
+
+
+
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
+from db.deps import get_db
+from domain.account_creation_services import open_account
+from domain.users_service import check_user_existence
 from ivr.yemot_helpers import yemot_read
 from ivr.yemot_session import init_yemot_session
-
-# אם את עדיין משתמשת ב-auth הישן ל-IVR:
-# from unused.core import authenticate_user  # אפשר להחליף בהמשך לדומיין החדש
 
 router = APIRouter(prefix="/ivr", tags=["ivr"])
 
 
+def _get_param(request: Request, key: str) -> str:
+    return (request.query_params.get(key) or "").strip()
+
+
 @router.get("/api", response_class=PlainTextResponse)
-async def ivr_entry(request: Request):
+def ivr_api(request: Request, conn=Depends(get_db)):
     """
-    Entry point for Yemot IVR: /ivr/api?action=...
-    Returns plain text response (Yemot format).
+    IVR entrypoint (Yemot):
+    /ivr/api?action=check_existence
+    /ivr/api?action=open_account
     """
     init_yemot_session(request)
 
-    action = request.query_params.get("action")
-    phone_number = request.query_params.get("ApiPhone") or request.query_params.get("phone_number")
-    id_number = request.query_params.get("id_number")
-    secret_code = request.query_params.get("secret_code")
+    action = _get_param(request, "action")
+    phone_number = _get_param(request, "ApiPhone") or _get_param(request, "phone_number")
 
     if not action:
         return "API is working no action"
 
-    # פעולה אחת עובדת כמו אצלך כרגע:
+    # --- 1) בדיקת קיום משתמש: קיים => /2, לא קיים => /3 ---
     if action == "check_existence":
         if not phone_number:
             return "tts=שגיאה: מספר טלפון לא זוהה.\nhangup"
 
-        if not id_number:
-            return yemot_read("אנא הקש מספר זהות", "id_number", 9, 9, read_type="TeudatZehut", confirm=True)
+        result = check_user_existence(conn, phone_number)
+
+        if not result.get("success"):
+            msg = (result.get("message") or "שגיאה במערכת").replace("&", " ")
+            return f"tts={msg}\nhangup"
+
+        return "go_to_folder=/2" if result.get("exists") else "go_to_folder=/3"
+
+    # --- 2) פתיחת חשבון (רישום) ---
+    if action == "open_account":
+        if not phone_number:
+            return "tts=שגיאה: מספר טלפון לא זוהה.\nhangup"
+
+        secret_code = _get_param(request, "secret_code")
+        bank_number = _get_param(request, "bank_number")
+        branch_number = _get_param(request, "branch_number")
+        account_number = _get_param(request, "account_number")
+
+        # כרגע שם ברירת מחדל (אפשר להחליף בהקלטה בהמשך)
+        name = _get_param(request, "name")
+        if not name:
+            last4 = phone_number[-4:] if len(phone_number) >= 4 else phone_number
+            name = f"user_{last4}"
+
         if not secret_code:
-            return yemot_read("אנא הקש את קוד הגישה שלך", "secret_code", 6, 6, read_type="Digits", confirm=True)
+            return yemot_read("הקישי קוד סודי בן 6 ספרות", "secret_code", 6, 6, read_type="Digits", confirm=True)
 
-        # שימי לב: ב-unused.core.authenticate_user שלך יש חתימה (phone, secret) בלבד בקוד החדש
-        # אבל ב-ivr הישן את קוראת עם (phone, id, secret).
-        # לכן פה אני קוראת בשיטה שתואמת לקובץ unused.core אצלך (שם זה phone+secret).
-        # אם אצלך יש עדיין גרסה עם 3 פרמטרים — תשני בהתאם.
-        # auth_result = authenticate_user(phone_number, secret_code)
+        if not bank_number:
+            return yemot_read("הקישי מספר בנק", "bank_number", 2, 2, read_type="Digits", confirm=True)
 
-        # if auth_result.get("authenticated"):
-        #     return "go_to_folder=/2"
-        # return "אחד או יותר מהנתונים שהוקשו לא נכונים"
+        if not branch_number:
+            return yemot_read("הקישי מספר סניף", "branch_number", 3, 3, read_type="Digits", confirm=True)
 
-    # ברירת מחדל:
+        if not account_number:
+            return yemot_read("הקישי מספר חשבון", "account_number", 6, 6, read_type="Digits", confirm=True)
+
+        result = open_account(
+            conn,
+            phone_number=phone_number,
+            secret_code=secret_code,
+            name=name,
+            bank_number=bank_number,
+            branch_number=branch_number,
+            account_number=account_number,
+        )
+
+        if not result.get("success"):
+            msg = (result.get("message") or "שגיאה במערכת").replace("&", " ")
+            if result.get("error_code") == "PHONE_ALREADY_EXISTS":
+                return f"id_list_message=t-{msg}&go_to_folder=/2"
+            return f"id_list_message=t-{msg}&go_to_folder=../"
+
+        return "id_list_message=t-נרשמת בהצלחה&go_to_folder=/2"
+
+    # --- ברירת מחדל ---
     return "id_list_message=t-פעולה לא נתמכת&go_to_folder=../"
