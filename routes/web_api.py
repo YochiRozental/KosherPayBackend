@@ -202,3 +202,11 @@ async def update_me_route(
         account_holder=payload.account_holder,
     )
     return ensure_success(result)
+
+@router.get("/db-health", include_in_schema=False)
+def db_health():
+    from db.connection import get_db_connection
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+            return {"db": "ok"}

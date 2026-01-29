@@ -16,6 +16,7 @@ def get_db_connection():
             password=os.getenv("DB_PASSWORD"),
             port=os.getenv("DB_PORT", 5432),
             sslmode="require",
+            connect_timeout=5,
         )
         yield conn
         conn.commit()
