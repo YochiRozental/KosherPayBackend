@@ -19,8 +19,8 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
     if not row:
         return {"success": False, "message": "פרטי התחברות שגויים"}
 
-    if row.get("status") != "active":
-        return {"success": False, "message": "המשתמש לא פעיל"}
+    # if row.get("status") != "active":
+    #     return {"success": False, "message": "המשתמש לא פעיל"}
 
     locked_until = row.get("locked_until")
     if locked_until and locked_until > datetime.now(timezone.utc):
