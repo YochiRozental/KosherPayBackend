@@ -3,18 +3,18 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-import psycopg2
+import psycopg
 
 from repositories.users_repo import (
     get_user_profile_by_id,
     update_user_profile_by_id,
-    get_user_id_by_phone
+    get_user_id_by_phone,
 )
 
 _PHONE_RE = re.compile(r"^0\d{8,9}$")
 
 
-def check_user_existence(conn, phone_number: str) -> dict:
+def check_user_existence(conn, phone_number: str) -> dict[str, Any]:
     phone_number = (phone_number or "").strip()
 
     if not phone_number:
@@ -37,9 +37,6 @@ def get_user_id_by_phone_service(conn, phone_number: str) -> str | None:
 
 
 def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
-    """
-    ממפה רשומת פרופיל מה-DB (dict) למבנה אחיד של user ל-API.
-    """
     return {
         "id": str(profile.get("user_id") or ""),
         "name": profile.get("name") or "",
@@ -55,17 +52,11 @@ def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def get_me(conn, *, user_id: str) -> dict[str, Any]:
-    """
-    מחזיר פרופיל משתמש מלא (שם/תפקיד/טלפון/בנק) לפי user_id.
-    """
     profile = get_user_profile_by_id(conn, user_id)
     if not profile:
         return {"success": False, "message": "משתמש לא נמצא"}
 
-    return {
-        "success": True,
-        "user": _to_user_me(profile),
-    }
+    return {"success": True, "user": _to_user_me(profile)}
 
 
 def update_me(
@@ -80,17 +71,6 @@ def update_me(
         account_number: str | None = None,
         account_holder: str | None = None,
 ) -> dict[str, Any]:
-    """
-        Update authenticated user profile.
-
-        Behavior:
-        - Only provided fields are updated (None values are ignored)
-        - Performs basic validation before persisting data
-
-        Security:
-        - Password is re-hashed before storage
-        - Does not expose internal errors to client
-        """
     # Normalize
     name = name.strip() if isinstance(name, str) else None
     phone = phone.strip() if isinstance(phone, str) else None
@@ -137,7 +117,7 @@ def update_me(
         )
     except ValueError:
         return {"success": False, "message": "נתונים לא תקינים"}
-    except psycopg2.Error:
+    except psycopg.Error:
         return {"success": False, "message": "שגיאה בשמירת הנתונים"}
 
     return {

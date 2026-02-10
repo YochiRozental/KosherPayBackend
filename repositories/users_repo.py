@@ -1,33 +1,47 @@
 from __future__ import annotations
 
-import psycopg2.extras
+from typing import Any
+
+import psycopg
 
 from auth.password import hash_secret
 
 
+def _fetchone_dict(cur: psycopg.Cursor) -> dict[str, Any] | None:
+    row = cur.fetchone()
+    if row is None:
+        return None
+    cols = [d.name for d in cur.description]
+    return dict(zip(cols, row))
+
+
 def get_user_id_by_phone(conn, phone_number: str) -> str | None:
-    phone_number = phone_number.strip()
+    phone_number = (phone_number or "").strip()
     if not phone_number:
         return None
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+    with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT user_id
+            SELECT user_id::text AS user_id
             FROM user_phones
             WHERE phone_number = %s LIMIT 1
             """,
             (phone_number,),
         )
         row = cur.fetchone()
-        return str(row["user_id"]) if row else None
+        return row[0] if row else None
 
 
-def get_user_for_auth(conn, phone_number: str) -> dict | None:
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+def get_user_for_auth(conn, phone_number: str) -> dict[str, Any] | None:
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        return None
+
+    with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT u.id AS user_id,
-                   u.role,
+            SELECT u.id::text AS user_id, u.role,
                    u.status,
                    up.phone_number,
                    ua.secret_hash,
@@ -40,10 +54,14 @@ def get_user_for_auth(conn, phone_number: str) -> dict | None:
             """,
             (phone_number,),
         )
-        return cur.fetchone()
+        return _fetchone_dict(cur)
 
 
 def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes: int) -> None:
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        return
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -62,6 +80,10 @@ def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes:
 
 
 def reset_failed_login(conn, phone_number: str) -> None:
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        return
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -76,12 +98,15 @@ def reset_failed_login(conn, phone_number: str) -> None:
         )
 
 
-def get_user_profile_by_id(conn, user_id: str) -> dict | None:
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+def get_user_profile_by_id(conn, user_id: str) -> dict[str, Any] | None:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT u.id            AS user_id,
-                   u.name,
+            SELECT u.id::text AS user_id, u.name,
                    u.role,
                    u.status,
                    up.phone_number AS phone,
@@ -98,7 +123,7 @@ def get_user_profile_by_id(conn, user_id: str) -> dict | None:
             """,
             (user_id,),
         )
-        return cur.fetchone()
+        return _fetchone_dict(cur)
 
 
 def update_user_profile_by_id(
@@ -112,52 +137,55 @@ def update_user_profile_by_id(
         branch_number: str | None = None,
         account_number: str | None = None,
         account_holder: str | None = None,
-) -> dict:
-    # 1) update name
+) -> dict[str, Any]:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        raise ValueError("user_id is required")
+
     if name is not None:
+        name = name.strip()
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE users SET name=%s, updated_at=NOW() WHERE id=%s",
-                (name.strip(), user_id),
+                (name, user_id),
             )
 
-    # 2) get primary phone row
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    primary: dict[str, Any] | None
+    with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, phone_number
+            SELECT id::text AS id, phone_number
             FROM user_phones
             WHERE user_id = %s
               AND is_primary = TRUE LIMIT 1
             """,
             (user_id,),
         )
-        primary = cur.fetchone()
+        primary = _fetchone_dict(cur)
 
-    # 3) update / insert phone
     if phone is not None:
+        phone = phone.strip()
         if primary:
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE user_phones SET phone_number=%s WHERE id=%s",
-                    (phone.strip(), primary["id"]),
+                    (phone, primary["id"]),
                 )
         else:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO user_phones (user_id, phone_number, is_primary)
-                    VALUES (%s, %s, TRUE) RETURNING id
+                    VALUES (%s, %s, TRUE) RETURNING id::text AS id
                     """,
-                    (user_id, phone.strip()),
+                    (user_id, phone),
                 )
-                primary = {"id": cur.fetchone()[0]}
+                primary = _fetchone_dict(cur)
 
-    # 4) update password if provided
     if secret_code is not None:
         if not primary:
             raise ValueError("No primary phone for user; cannot set secret.")
-        secret_hash = hash_secret(secret_code)
+        secret_hash = hash_secret(secret_code.strip())
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -170,12 +198,26 @@ def update_user_profile_by_id(
                 (secret_hash, primary["id"]),
             )
 
-    # 5) bank account upsert by user_id
-    bank_fields_sent = any(x is not None for x in [bank_number, branch_number, account_number, account_holder])
+    bank_fields_sent = any(
+        x is not None for x in (bank_number, branch_number, account_number, account_holder)
+    )
     if bank_fields_sent:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id FROM bank_accounts WHERE user_id=%s ORDER BY created_at ASC LIMIT 1", (user_id,))
-            ba = cur.fetchone()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text AS id
+                FROM bank_accounts
+                WHERE user_id = %s
+                ORDER BY created_at ASC LIMIT 1
+                """,
+                (user_id,),
+            )
+            ba = _fetchone_dict(cur)
+
+        bn = (bank_number or "").strip()
+        br = (branch_number or "").strip()
+        an = (account_number or "").strip()
+        ah = (account_holder or "").strip()
 
         if ba:
             with conn.cursor() as cur:
@@ -188,13 +230,7 @@ def update_user_profile_by_id(
                         account_holder=%s
                     WHERE id = %s
                     """,
-                    (
-                        (bank_number or "").strip(),
-                        (branch_number or "").strip(),
-                        (account_number or "").strip(),
-                        (account_holder or "").strip(),
-                        ba["id"],
-                    ),
+                    (bn, br, an, ah, ba["id"]),
                 )
         else:
             with conn.cursor() as cur:
@@ -203,13 +239,7 @@ def update_user_profile_by_id(
                     INSERT INTO bank_accounts (user_id, bank_number, branch_number, account_number, account_holder)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (
-                        user_id,
-                        (bank_number or "").strip(),
-                        (branch_number or "").strip(),
-                        (account_number or "").strip(),
-                        (account_holder or "").strip(),
-                    ),
+                    (user_id, bn, br, an, ah),
                 )
 
     updated = get_user_profile_by_id(conn, user_id)

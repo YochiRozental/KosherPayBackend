@@ -4,7 +4,23 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-import psycopg2.extras
+import psycopg
+
+
+def _fetchone_dict(cur: psycopg.Cursor) -> dict[str, Any] | None:
+    row = cur.fetchone()
+    if row is None:
+        return None
+    cols = [d.name for d in cur.description]
+    return dict(zip(cols, row))
+
+
+def _fetchall_dict(cur: psycopg.Cursor) -> list[dict[str, Any]]:
+    rows = cur.fetchall()
+    if not rows:
+        return []
+    cols = [d.name for d in cur.description]
+    return [dict(zip(cols, r)) for r in rows]
 
 
 def create_transaction(
@@ -20,7 +36,7 @@ def create_transaction(
         related_request_id: str | None = None,
         related_transaction_id: str | None = None,
 ) -> uuid.UUID:
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO transactions (type,
@@ -47,7 +63,7 @@ def create_transaction(
             ),
         )
         row = cur.fetchone()
-        return row["id"]
+        return row[0]
 
 
 def get_transactions_for_user(
@@ -56,8 +72,8 @@ def get_transactions_for_user(
         user_id: str,
         limit: int = 20,
         offset: int = 0,
-) -> list[dict]:
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
         cur.execute(
             """
             SELECT id,
@@ -78,7 +94,7 @@ def get_transactions_for_user(
             """,
             (user_id, user_id, limit, offset),
         )
-        return cur.fetchall()
+        return _fetchall_dict(cur)
 
 
 def get_transactions_for_user_in_range(
@@ -91,26 +107,28 @@ def get_transactions_for_user_in_range(
         offset: int = 0,
 ) -> list[dict[str, Any]]:
     """
-    מחזיר פעולות של משתמש בטווח תאריכים כולל.
+    מחזיר פעולות של משתמש בטווח תאריכים (כולל).
     """
-    sql = """
-        SELECT
-            id,
-            type,
-            amount,
-            currency,
-            status,
-            description,
-            from_user_id,
-            to_user_id,
-            created_at
-        FROM transactions
-        WHERE (from_user_id = %s OR to_user_id = %s)
-          AND created_at >= %s
-          AND created_at <= %s
-        ORDER BY created_at DESC
-        LIMIT %s OFFSET %s
-    """
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, (user_id, user_id, start_date, end_date, limit, offset))
-        return cur.fetchall()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id,
+                   type,
+                   amount,
+                   currency,
+                   status,
+                   description,
+                   from_user_id,
+                   to_user_id,
+                   created_at
+            FROM transactions
+            WHERE (from_user_id = %s OR to_user_id = %s)
+              AND created_at >= %s
+              AND created_at <= %s
+            ORDER BY created_at DESC
+                LIMIT %s
+            OFFSET %s
+            """,
+            (user_id, user_id, start_date, end_date, limit, offset),
+        )
+        return _fetchall_dict(cur)

@@ -1,16 +1,28 @@
 from __future__ import annotations
 
-import psycopg2.extras
+from typing import Any
 
 
-def get_wallet_by_user_id(conn, user_id: str) -> dict | None:
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+def get_wallet_by_user_id(conn, user_id: str) -> dict[str, Any] | None:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT current_balance, currency
+            SELECT current_balance,
+                   currency
             FROM wallets
-            WHERE user_id = %s
+            WHERE user_id = %s LIMIT 1
             """,
             (user_id,),
         )
-        return cur.fetchone()
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        return {
+            "current_balance": row[0],
+            "currency": row[1],
+        }

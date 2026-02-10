@@ -1,5 +1,8 @@
-import psycopg2.extras
+from __future__ import annotations
+
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, status
+from psycopg.rows import dict_row
 
 from auth.dependencies import require_admin
 from db.deps import get_db
@@ -11,7 +14,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 @router.get("/users", response_model=UsersListResponse)
 async def get_all_users(conn=Depends(get_db), _admin: dict = Depends(require_admin)):
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
                 SELECT u.id,
@@ -33,6 +36,11 @@ async def get_all_users(conn=Depends(get_db), _admin: dict = Depends(require_adm
 
         return {"success": True, "users": users}
 
+    except psycopg.Error as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"success": False, "message": "שגיאה במערכת", "error": str(e)},
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

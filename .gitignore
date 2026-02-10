@@ -28,3 +28,10 @@ build/
 
 # Log files
 *.log
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+docker/
