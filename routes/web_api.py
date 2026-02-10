@@ -11,8 +11,13 @@ from domain.payment_requests_services import (
     approve_payment_request,
     reject_payment_request,
 )
-from domain.payment_services import get_transaction_history, deposit, withdraw, transfer
-from domain.users_service import get_me, update_me
+from domain.transactions_services import (
+    get_transaction_history,
+    deposit,
+    withdraw,
+    transfer
+)
+from domain.users_services import get_me, update_me
 from domain.wallet_services import get_balance
 from repositories.users_repo import (
     get_user_id_by_phone,
@@ -202,6 +207,7 @@ async def update_me_route(
         account_holder=payload.account_holder,
     )
     return ensure_success(result)
+
 
 @router.get("/db-health", include_in_schema=False)
 def db_health():

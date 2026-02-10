@@ -37,7 +37,6 @@ def open_account(
         }
 
     try:
-        # חשוב: טרנזקציה אחת לכל תהליך ההרשמה
         with conn:
             user_id = create_user(conn, name=name)
 
@@ -70,14 +69,12 @@ def open_account(
         }
 
     except Exception as e:
-        # אם זה ייחודיות על טלפון – נחזיר הודעה ידידותית
         if is_phone_unique_violation(e):
             return {
                 "success": False,
                 "message": "מספר טלפון זה כבר קיים במערכת",
                 "error_code": "PHONE_ALREADY_EXISTS",
             }
-        # אחרת שגיאה כללית
         return {
             "success": False,
             "message": "שגיאה במערכת",

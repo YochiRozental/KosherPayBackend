@@ -29,6 +29,13 @@ def check_user_existence(conn, phone_number: str) -> dict:
     }
 
 
+def get_user_id_by_phone_service(conn, phone_number: str) -> str | None:
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        return None
+    return get_user_id_by_phone(conn, phone_number)
+
+
 def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
     """
     ממפה רשומת פרופיל מה-DB (dict) למבנה אחיד של user ל-API.

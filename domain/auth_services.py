@@ -45,7 +45,7 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
         "access_token": create_access_token(
             user_id=user_id,
             role=role,
-            phone_number=phone_number,  # עדיין נשמר בטוקן לנוחות; אבל הדומיין עובד עם user_id
+            phone_number=phone_number,
         ),
         "refresh_token": create_refresh_token(user_id=user_id),
         "user": {

@@ -1,150 +1,63 @@
-# # yemot_session.py
-# from flask import request, g
-#
-# # חנות SESSION בזיכרון (רצוי ברדיס/DB בפרודקשן)
-# SESSION_STORE: dict[str, dict[str, str]] = {}
-#
-# def init_yemot_session():
-#     """
-#     מקביל ל:
-#     session_id($_GET['ApiCallId']);
-#     session_start();
-#     + הכנסת הפרמטר האחרון ל-SESSION
-#     לפי הדוגמה בפורום.
-#     """
-#     call_id = request.args.get("ApiCallId")
-#
-#     if not call_id:
-#         # אין שיחה - אין SESSION
-#         g.yemot_call_id = None
-#         g.yemot_session = {}
-#         return
-#
-#     # יוצרים/טוענים SESSION לשיחה
-#     session = SESSION_STORE.setdefault(call_id, {})
-#
-#     # בדיוק כמו ב-PHP:
-#     # $QUERY_STRING = $_SERVER['QUERY_STRING'];
-#     # $last_param = substr($QUERY_STRING, strrpos($QUERY_STRING, '&') + 1);
-#     # $param = explode('=', $last_param);
-#     # $_SESSION[$param[0]] = $_GET[$param[0]];
-#     qs = (request.query_string or b"").decode("utf-8")
-#     if qs:
-#         last_param = qs.split("&")[-1]
-#         if "=" in last_param:
-#             key, value = last_param.split("=", 1)
-#             # שומרים רק את הפרמטר האחרון ב-SESSION
-#             session[key] = value
-#
-#     g.yemot_call_id = call_id
-#     g.yemot_session = session
-#
-# def get_session() -> dict:
-#     """החזרת ה־SESSION של השיחה הנוכחית."""
-#     return getattr(g, "yemot_session", {})
-#
-# def read_param(
-#     param: str,
-#     voice: str,
-#     keys: str = "",
-#     max_taps: int = 1,
-#     min_taps: int = 1,
-#     sulamit: str | None = None,
-#     cochavit: bool = True,
-#     read_as: str = "No",
-# ) -> str | None:
-#     """
-#     מקביל לפונקציית read ב-PHP מהפורום:
-#     אם אין ערך ב-SESSION → מחזירים פקודת read
-#     אם יש ערך → מחזירים אותו (הפונקציה אצלך בקוד פשוט לא תקרא return הזה).
-#     """
-#     session = get_session()
-#     if param not in session:
-#         # בניית מחרוזת read בסגנון ימות
-#         # read=$voice=$param,,$max_taps,$min_taps,,$read_as,,,,$keys
-#         resp = f"read={voice}={param},,{max_taps},{min_taps},,{read_as},,,,{keys}"
-#         if cochavit and keys:
-#             resp += "*"
-#         if sulamit:
-#             resp += f",,Ok,{sulamit}"
-#         return resp
-#
-#     # יש ערך ב־SESSION – אפשר להשתמש בו בקוד הלוגיקה
-#     return None
-#
-# def unset_session_values(keys: str) -> None:
-#     """
-#     מקביל ל-unset_session_values ב-PHP:
-#     מקבל מחרוזת של מפתחות, מופרדים בפסיק.
-#     לדוגמה: "param1,param2,param3:extra"
-#     """
-#     session = get_session()
-#     for raw in keys.split(","):
-#         key = raw.split(":", 1)[0].strip()
-#         if key:
-#             session.pop(key, None)
-#
-# def reload_module(voice: str | None = None, unset: str | None = None) -> str:
-#     """
-#     מקביל ל-reload_module ב-PHP:
-#     מחיקת ערכים מה-SESSION + חזרה לאותה שלוחה.
-#     """
-#     if unset:
-#         unset_session_values(unset)
-#
-#     ext = request.args.get("ApiExtension", "")
-#
-#     parts = []
-#     if voice:
-#         parts.append(f"id_list_message={voice}")
-#     parts.append(f"go_to_folder=/{ext}")
-#     return "&".join(parts)
-#
-# def go_to_folder(folder: str = "/", voice: str | None = None) -> str:
-#     """
-#     מקביל ל-go_to_folder ב-PHP
-#     """
-#     parts = []
-#     if voice:
-#         parts.append(f"id_list_message={voice}")
-#     parts.append(f"go_to_folder={folder}")
-#     return "&".join(parts)
-
-
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import os
+from datetime import datetime, timezone
 
 from fastapi import Request
 
-# חנות SESSION בזיכרון (רצוי להחליף לרדיס בפרודקשן)
-SESSION_STORE: dict[str, dict[str, str]] = {}
+from db.redis_client import get_redis
 
-SESSION_TTL_MIN = 60
-SESSION_META: dict[str, datetime] = {}  # call_id -> last_seen (UTC)
+SESSION_TTL_MIN = int(os.environ.get("IVR_SESSION_TTL_MIN", "60"))
+
+ALLOWED_KEYS = {
+    "bank_number",
+    "branch_number",
+    "account_number",
+    "name",
+    "choice",
+    "recipient_phone",
+    "amount",
+    "amount_t",
+    "amount_d",
+    "amount_w",
+
+    "amount_deposit",
+    "amount_withdraw",
+
+    "to_phone",
+    "amount_transfer",
+
+    "pay_req_phone",
+    "pay_req_amount",
+
+    "req_i",
+    "req_id",
+
+    "sent_next_choice",
+    "sent_req_offset",
+
+    "history_offset",
+    "history_choice",
+    "history_next_choice",
+
+    "history_start_date",
+    "history_end_date",
+
+    "history_range_start_iso",
+    "history_range_end_iso",
+
+    "edit_idx",
+    "edit_choice",
+
+}
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _cleanup_expired_sessions() -> None:
-    if not SESSION_META:
-        return
-    cutoff = _utcnow() - timedelta(minutes=SESSION_TTL_MIN)
-    expired = [call_id for call_id, ts in SESSION_META.items() if ts < cutoff]
-    for call_id in expired:
-        SESSION_META.pop(call_id, None)
-        SESSION_STORE.pop(call_id, None)
+def _key(call_id: str) -> str:
+    return f"yemot:call:{call_id}"
 
 
 def init_yemot_session(request: Request) -> dict[str, str]:
-    """
-    FastAPI version:
-    - session key is ApiCallId
-    - store last query param into session, compatible with your old PHP logic.
-    """
-    _cleanup_expired_sessions()
+    r = get_redis()
 
     call_id = request.query_params.get("ApiCallId")
     if not call_id:
@@ -152,16 +65,24 @@ def init_yemot_session(request: Request) -> dict[str, str]:
         request.state.yemot_session = {}
         return request.state.yemot_session
 
-    session = SESSION_STORE.setdefault(call_id, {})
-    SESSION_META[call_id] = _utcnow()
+    key = _key(call_id)
 
-    # Save last param from query string (like your legacy behavior)
+    session: dict[str, str] = r.hgetall(key) or {}
+
     qs = str(request.url.query or "")
     if qs:
-        last_param = qs.split("&")[-1]
-        if "=" in last_param:
-            key, value = last_param.split("=", 1)
-            session[key] = value
+        for part in qs.split("&"):
+            if "=" not in part:
+                continue
+            pkey, value = part.split("=", 1)
+            if pkey in ALLOWED_KEYS:
+                session[pkey] = value
+                r.hset(key, mapping={pkey: value})
+
+    now = datetime.now(timezone.utc).isoformat()
+    session["__last_seen"] = now
+    r.hset(key, mapping={"__last_seen": now})
+    r.expire(key, SESSION_TTL_MIN * 60)
 
     request.state.yemot_call_id = call_id
     request.state.yemot_session = session
@@ -172,29 +93,37 @@ def get_session(request: Request) -> dict[str, str]:
     return getattr(request.state, "yemot_session", {})
 
 
-def unset_session_values(request: Request, keys: str) -> None:
+def session_get(request: Request, key: str) -> str | None:
     session = get_session(request)
-    for raw in keys.split(","):
-        key = raw.split(":", 1)[0].strip()
-        if key:
-            session.pop(key, None)
+    v = session.get(key)
+    return v if v else None
 
 
-def reload_module(request: Request, voice: str | None = None, unset: str | None = None) -> str:
-    if unset:
-        unset_session_values(request, unset)
+def session_set(request: Request, key: str, value: str) -> None:
+    call_id = getattr(request.state, "yemot_call_id", None)
+    if not call_id:
+        return
 
-    ext = request.query_params.get("ApiExtension", "")
-    parts: list[str] = []
-    if voice:
-        parts.append(f"id_list_message={voice}")
-    parts.append(f"go_to_folder=/{ext}")
-    return "&".join(parts)
+    r = get_redis()
+    redis_key = _key(call_id)
+
+    r.hset(redis_key, key, value)
+    r.expire(redis_key, SESSION_TTL_MIN * 60)
+
+    session = get_session(request)
+    session[key] = value
 
 
-def go_to_folder(folder: str = "/", voice: str | None = None) -> str:
-    parts: list[str] = []
-    if voice:
-        parts.append(f"id_list_message={voice}")
-    parts.append(f"go_to_folder={folder}")
-    return "&".join(parts)
+def session_delete(request: Request, *keys: str) -> None:
+    call_id = getattr(request.state, "yemot_call_id", None)
+    if not call_id or not keys:
+        return
+
+    r = get_redis()
+    redis_key = _key(call_id)
+
+    r.hdel(redis_key, *keys)
+
+    session = get_session(request)
+    for k in keys:
+        session.pop(k, None)

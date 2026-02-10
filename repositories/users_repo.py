@@ -6,6 +6,9 @@ from auth.password import hash_secret
 
 
 def get_user_id_by_phone(conn, phone_number: str) -> str | None:
+    phone_number = phone_number.strip()
+    if not phone_number:
+        return None
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
