@@ -6,6 +6,10 @@ from psycopg import errors
 
 
 def create_user(conn, *, name: str) -> UUID:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -15,12 +19,22 @@ def create_user(conn, *, name: str) -> UUID:
             (name,),
         )
         row = cur.fetchone()
+        if not row:
+            raise RuntimeError("Failed to create user")
         return row[0]
 
 
 def create_user_phone(
-        conn, *, user_id: UUID, phone_number: str, is_primary: bool = True
+        conn,
+        *,
+        user_id: UUID,
+        phone_number: str,
+        is_primary: bool = True,
 ) -> UUID:
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        raise ValueError("phone_number is required")
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -30,10 +44,21 @@ def create_user_phone(
             (user_id, phone_number, is_primary),
         )
         row = cur.fetchone()
+        if not row:
+            raise RuntimeError("Failed to create user phone")
         return row[0]
 
 
-def create_user_auth(conn, *, user_phone_id: UUID, secret_hash: str) -> None:
+def create_user_auth(
+        conn,
+        *,
+        user_phone_id: UUID,
+        secret_hash: str,
+) -> None:
+    secret_hash = (secret_hash or "").strip()
+    if not secret_hash:
+        raise ValueError("secret_hash is required")
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -44,7 +69,14 @@ def create_user_auth(conn, *, user_phone_id: UUID, secret_hash: str) -> None:
         )
 
 
-def create_wallet(conn, *, user_id: UUID, currency: str = "ILS") -> None:
+def create_wallet(
+        conn,
+        *,
+        user_id: UUID,
+        currency: str = "ILS",
+) -> None:
+    currency = (currency or "").strip() or "ILS"
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -64,6 +96,14 @@ def create_bank_account(
         account_number: str,
         account_holder: str,
 ) -> UUID:
+    bank_number = (bank_number or "").strip()
+    branch_number = (branch_number or "").strip()
+    account_number = (account_number or "").strip()
+    account_holder = (account_holder or "").strip()
+
+    if not all([bank_number, branch_number, account_number, account_holder]):
+        raise ValueError("All bank account fields are required")
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -77,6 +117,8 @@ def create_bank_account(
             (user_id, bank_number, branch_number, account_number, account_holder),
         )
         row = cur.fetchone()
+        if not row:
+            raise RuntimeError("Failed to create bank account")
         return row[0]
 
 

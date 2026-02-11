@@ -11,33 +11,12 @@ AUTH_MAX_FAILED = int(os.environ.get("AUTH_MAX_FAILED", "5"))
 AUTH_LOCK_MINUTES = int(os.environ.get("AUTH_LOCK_MINUTES", "15"))
 
 
-def _parse_locked_until(value) -> datetime | None:
-    """
-    תומך ב:
-    - None
-    - datetime (כבר מומר)
-    - str (ISO / 'YYYY-MM-DD HH:MM:SS+00')
-    """
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-
-    if isinstance(value, str):
-        s = value.strip()
-        s = s.replace(" ", "T", 1)
-        if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
-        try:
-            dt = datetime.fromisoformat(s)
-        except ValueError:
-            return None
-
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-
-    return None
+def _as_utc_aware(dt: datetime) -> datetime:
+    # אם הגיע naive (בלי tzinfo) – נתייחס אליו כ-UTC
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    # אם הגיע עם tzinfo – נמיר ל-UTC
+    return dt.astimezone(timezone.utc)
 
 
 def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
@@ -48,9 +27,13 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
     if not row:
         return {"success": False, "message": "פרטי התחברות שגויים"}
 
-    locked_until = _parse_locked_until(row.get("locked_until"))
-    if locked_until and locked_until > datetime.now(timezone.utc):
-        return {"success": False, "message": "החשבון נעול זמנית עקב ניסיונות כושלים"}
+    locked_until = row.get("locked_until")
+    if isinstance(locked_until, datetime):
+        locked_until = _as_utc_aware(locked_until)
+        if locked_until > datetime.now(timezone.utc):
+            return {"success": False, "message": "החשבון נעול זמנית עקב ניסיונות כושלים"}
+    else:
+        locked_until = None
 
     if not verify_secret(secret_code, row["secret_hash"]):
         bump_failed_login(
@@ -68,11 +51,7 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
 
     return {
         "success": True,
-        "access_token": create_access_token(
-            user_id=user_id,
-            role=role,
-            phone_number=phone_number,
-        ),
+        "access_token": create_access_token(user_id=user_id, role=role, phone_number=phone_number),
         "refresh_token": create_refresh_token(user_id=user_id),
         "user": {"id": user_id, "role": role, "phone": phone_number},
     }

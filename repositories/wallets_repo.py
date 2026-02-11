@@ -18,11 +18,12 @@ def get_wallet_by_user_id(conn, user_id: str) -> dict[str, Any] | None:
             """,
             (user_id,),
         )
+
         row = cur.fetchone()
-        if not row:
+        if row is None:
             return None
 
         return {
-            "current_balance": row[0],
-            "currency": row[1],
+            "current_balance": row["current_balance"],
+            "currency": row["currency"],
         }

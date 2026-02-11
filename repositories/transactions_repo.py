@@ -4,23 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-import psycopg
-
-
-def _fetchone_dict(cur: psycopg.Cursor) -> dict[str, Any] | None:
-    row = cur.fetchone()
-    if row is None:
-        return None
-    cols = [d.name for d in cur.description]
-    return dict(zip(cols, row))
-
-
-def _fetchall_dict(cur: psycopg.Cursor) -> list[dict[str, Any]]:
-    rows = cur.fetchall()
-    if not rows:
-        return []
-    cols = [d.name for d in cur.description]
-    return [dict(zip(cols, r)) for r in rows]
+from psycopg.rows import dict_row
 
 
 def create_transaction(
@@ -36,7 +20,7 @@ def create_transaction(
         related_request_id: str | None = None,
         related_transaction_id: str | None = None,
 ) -> uuid.UUID:
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             INSERT INTO transactions (type,
@@ -62,8 +46,12 @@ def create_transaction(
                 related_transaction_id,
             ),
         )
+
         row = cur.fetchone()
-        return row[0]
+        if not row:
+            raise RuntimeError("Failed to create transaction")
+
+        return row["id"]
 
 
 def get_transactions_for_user(
@@ -73,7 +61,11 @@ def get_transactions_for_user(
         limit: int = 20,
         offset: int = 0,
 ) -> list[dict[str, Any]]:
-    with conn.cursor() as cur:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return []
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id,
@@ -94,7 +86,7 @@ def get_transactions_for_user(
             """,
             (user_id, user_id, limit, offset),
         )
-        return _fetchall_dict(cur)
+        return cur.fetchall()
 
 
 def get_transactions_for_user_in_range(
@@ -109,7 +101,11 @@ def get_transactions_for_user_in_range(
     """
     מחזיר פעולות של משתמש בטווח תאריכים (כולל).
     """
-    with conn.cursor() as cur:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return []
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id,
@@ -131,4 +127,4 @@ def get_transactions_for_user_in_range(
             """,
             (user_id, user_id, start_date, end_date, limit, offset),
         )
-        return _fetchall_dict(cur)
+        return cur.fetchall()

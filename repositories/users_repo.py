@@ -2,17 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
+from psycopg.rows import dict_row
 
 from auth.password import hash_secret
-
-
-def _fetchone_dict(cur: psycopg.Cursor) -> dict[str, Any] | None:
-    row = cur.fetchone()
-    if row is None:
-        return None
-    cols = [d.name for d in cur.description]
-    return dict(zip(cols, row))
 
 
 def get_user_id_by_phone(conn, phone_number: str) -> str | None:
@@ -20,7 +12,7 @@ def get_user_id_by_phone(conn, phone_number: str) -> str | None:
     if not phone_number:
         return None
 
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT user_id::text AS user_id
@@ -30,7 +22,7 @@ def get_user_id_by_phone(conn, phone_number: str) -> str | None:
             (phone_number,),
         )
         row = cur.fetchone()
-        return row[0] if row else None
+        return row["user_id"] if row else None
 
 
 def get_user_for_auth(conn, phone_number: str) -> dict[str, Any] | None:
@@ -38,7 +30,7 @@ def get_user_for_auth(conn, phone_number: str) -> dict[str, Any] | None:
     if not phone_number:
         return None
 
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT u.id::text AS user_id, u.role,
@@ -54,7 +46,35 @@ def get_user_for_auth(conn, phone_number: str) -> dict[str, Any] | None:
             """,
             (phone_number,),
         )
-        return _fetchone_dict(cur)
+        return cur.fetchone()
+
+
+def get_user_profile_by_id(conn, user_id: str) -> dict[str, Any] | None:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT u.id::text AS user_id, u.name,
+                   u.role,
+                   u.status,
+                   up.phone_number AS phone,
+                   ba.bank_number,
+                   ba.branch_number,
+                   ba.account_number,
+                   ba.account_holder
+            FROM users u
+                     LEFT JOIN user_phones up
+                               ON up.user_id = u.id AND up.is_primary = TRUE
+                     LEFT JOIN bank_accounts ba
+                               ON ba.user_id = u.id
+            WHERE u.id = %s LIMIT 1
+            """,
+            (user_id,),
+        )
+        return cur.fetchone()
 
 
 def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes: int) -> None:
@@ -69,11 +89,13 @@ def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes:
             SET failed_attempts = failed_attempts + 1,
                 locked_until    = CASE
                                       WHEN failed_attempts + 1 >= %s
-                                          THEN (NOW() + (%s || ' minutes')::interval)
-                                      ELSE locked_until
-                    END FROM user_phones up
+                                          THEN NOW() + (%s || ' minutes')::interval
+                    ELSE locked_until
+            END
+            FROM user_phones up
             WHERE ua.user_phone_id = up.id
-              AND up.phone_number = %s
+              AND up.phone_number =
+            %s
             """,
             (max_failed, lock_minutes, phone_number),
         )
@@ -98,34 +120,6 @@ def reset_failed_login(conn, phone_number: str) -> None:
         )
 
 
-def get_user_profile_by_id(conn, user_id: str) -> dict[str, Any] | None:
-    user_id = (user_id or "").strip()
-    if not user_id:
-        return None
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT u.id::text AS user_id, u.name,
-                   u.role,
-                   u.status,
-                   up.phone_number AS phone,
-                   ba.bank_number,
-                   ba.branch_number,
-                   ba.account_number,
-                   ba.account_holder
-            FROM users u
-                     LEFT JOIN user_phones up
-                               ON up.user_id = u.id AND up.is_primary = TRUE
-                     LEFT JOIN bank_accounts ba
-                               ON ba.user_id = u.id
-            WHERE u.id = %s LIMIT 1
-            """,
-            (user_id,),
-        )
-        return _fetchone_dict(cur)
-
-
 def update_user_profile_by_id(
         conn,
         *,
@@ -142,16 +136,29 @@ def update_user_profile_by_id(
     if not user_id:
         raise ValueError("user_id is required")
 
+    # -----------------------
+    # Update user name
+    # -----------------------
     if name is not None:
         name = name.strip()
+        if not name:
+            raise ValueError("name cannot be empty")
+
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE users SET name=%s, updated_at=NOW() WHERE id=%s",
+                """
+                UPDATE users
+                SET name       = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
                 (name, user_id),
             )
 
-    primary: dict[str, Any] | None
-    with conn.cursor() as cur:
+    # -----------------------
+    # Fetch primary phone
+    # -----------------------
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id::text AS id, phone_number
@@ -161,18 +168,28 @@ def update_user_profile_by_id(
             """,
             (user_id,),
         )
-        primary = _fetchone_dict(cur)
+        primary = cur.fetchone()
 
+    # -----------------------
+    # Update / insert phone
+    # -----------------------
     if phone is not None:
         phone = phone.strip()
+        if not phone:
+            raise ValueError("phone cannot be empty")
+
         if primary:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE user_phones SET phone_number=%s WHERE id=%s",
+                    """
+                    UPDATE user_phones
+                    SET phone_number = %s
+                    WHERE id = %s
+                    """,
                     (phone, primary["id"]),
                 )
         else:
-            with conn.cursor() as cur:
+            with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
                     INSERT INTO user_phones (user_id, phone_number, is_primary)
@@ -180,29 +197,48 @@ def update_user_profile_by_id(
                     """,
                     (user_id, phone),
                 )
-                primary = _fetchone_dict(cur)
+                primary = cur.fetchone()
 
+    # -----------------------
+    # Update secret code
+    # -----------------------
     if secret_code is not None:
+        secret_code = secret_code.strip()
+        if not secret_code:
+            raise ValueError("secret_code cannot be empty")
+
         if not primary:
-            raise ValueError("No primary phone for user; cannot set secret.")
-        secret_hash = hash_secret(secret_code.strip())
+            raise ValueError("No primary phone for user; cannot set secret")
+
+        secret_hash = hash_secret(secret_code)
+
         with conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE user_auth
-                SET secret_hash=%s,
-                    failed_attempts=0,
-                    locked_until=NULL
+                SET secret_hash     = %s,
+                    failed_attempts = 0,
+                    locked_until    = NULL
                 WHERE user_phone_id = %s
                 """,
                 (secret_hash, primary["id"]),
             )
 
+    # -----------------------
+    # Bank account
+    # -----------------------
     bank_fields_sent = any(
-        x is not None for x in (bank_number, branch_number, account_number, account_holder)
+        v is not None
+        for v in (bank_number, branch_number, account_number, account_holder)
     )
+
     if bank_fields_sent:
-        with conn.cursor() as cur:
+        bn = (bank_number or "").strip()
+        br = (branch_number or "").strip()
+        an = (account_number or "").strip()
+        ah = (account_holder or "").strip()
+
+        with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
                 SELECT id::text AS id
@@ -212,22 +248,17 @@ def update_user_profile_by_id(
                 """,
                 (user_id,),
             )
-            ba = _fetchone_dict(cur)
-
-        bn = (bank_number or "").strip()
-        br = (branch_number or "").strip()
-        an = (account_number or "").strip()
-        ah = (account_holder or "").strip()
+            ba = cur.fetchone()
 
         if ba:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     UPDATE bank_accounts
-                    SET bank_number=%s,
-                        branch_number=%s,
-                        account_number=%s,
-                        account_holder=%s
+                    SET bank_number    = %s,
+                        branch_number  = %s,
+                        account_number = %s,
+                        account_holder = %s
                     WHERE id = %s
                     """,
                     (bn, br, an, ah, ba["id"]),
@@ -236,13 +267,18 @@ def update_user_profile_by_id(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO bank_accounts (user_id, bank_number, branch_number, account_number, account_holder)
+                    INSERT INTO bank_accounts
+                        (user_id, bank_number, branch_number, account_number, account_holder)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
                     (user_id, bn, br, an, ah),
                 )
 
+    # -----------------------
+    # Return updated profile
+    # -----------------------
     updated = get_user_profile_by_id(conn, user_id)
     if not updated:
         raise ValueError("User not found after update")
+
     return updated

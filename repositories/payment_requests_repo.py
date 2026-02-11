@@ -2,23 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
-
-
-def _fetchone_dict(cur: psycopg.Cursor) -> dict[str, Any] | None:
-    row = cur.fetchone()
-    if row is None:
-        return None
-    cols = [d.name for d in cur.description]
-    return dict(zip(cols, row))
-
-
-def _fetchall_dict(cur: psycopg.Cursor) -> list[dict[str, Any]]:
-    rows = cur.fetchall()
-    if not rows:
-        return []
-    cols = [d.name for d in cur.description]
-    return [dict(zip(cols, r)) for r in rows]
+from psycopg.rows import dict_row
 
 
 def create_payment_request(
@@ -28,34 +12,39 @@ def create_payment_request(
         recipient_id: str,
         amount: float,
 ) -> dict[str, Any]:
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            INSERT INTO payment_requests
-                (requester_id, recipient_id, amount, status)
+            INSERT INTO payment_requests (requester_id, recipient_id, amount, status)
             VALUES (%s, %s, %s, 'pending') RETURNING
-                id::text AS id,
+                id::text      AS id,
                 requester_id,
                 recipient_id,
                 amount,
                 status,
-                created_at
+                created_at,
+                resolved_at
             """,
             (requester_id, recipient_id, amount),
         )
-        row = _fetchone_dict(cur)
+        row = cur.fetchone()
         return row or {}
 
 
 def get_sent_requests_for_user(conn, *, user_id: str) -> list[dict[str, Any]]:
-    with conn.cursor() as cur:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return []
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT pr.id::text AS id, pr.requester_id,
+            SELECT pr.id::text      AS id, pr.requester_id,
                    pr.recipient_id,
                    pr.amount,
                    pr.status,
                    pr.created_at,
+                   pr.resolved_at,
 
                    u_rec.name          AS recipient_name,
                    up_rec.phone_number AS recipient_phone
@@ -70,14 +59,18 @@ def get_sent_requests_for_user(conn, *, user_id: str) -> list[dict[str, Any]]:
             """,
             (user_id,),
         )
-        return _fetchall_dict(cur)
+        return cur.fetchall()
 
 
 def get_requests_for_user(conn, *, user_id: str) -> list[dict[str, Any]]:
-    with conn.cursor() as cur:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return []
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT pr.id::text AS id, pr.requester_id,
+            SELECT pr.id::text      AS id, pr.requester_id,
                    pr.recipient_id,
                    pr.amount,
                    pr.status,
@@ -97,13 +90,21 @@ def get_requests_for_user(conn, *, user_id: str) -> list[dict[str, Any]]:
             """,
             (user_id,),
         )
-        return _fetchall_dict(cur)
+        return cur.fetchall()
 
 
 def approve_pending_request_atomic(
-        conn, *, request_id: str, recipient_id: str
+        conn,
+        *,
+        request_id: str,
+        recipient_id: str,
 ) -> dict[str, Any] | None:
-    with conn.cursor() as cur:
+    request_id = (request_id or "").strip()
+    recipient_id = (recipient_id or "").strip()
+    if not request_id or not recipient_id:
+        return None
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             UPDATE payment_requests
@@ -117,16 +118,27 @@ def approve_pending_request_atomic(
                 , requester_id
                 , recipient_id
                 , amount
+                , status
+                , created_at
+                , resolved_at
             """,
             (request_id, recipient_id),
         )
-        return _fetchone_dict(cur)
+        return cur.fetchone()
 
 
 def reject_pending_request_atomic(
-        conn, *, request_id: str, recipient_id: str
+        conn,
+        *,
+        request_id: str,
+        recipient_id: str,
 ) -> dict[str, Any] | None:
-    with conn.cursor() as cur:
+    request_id = (request_id or "").strip()
+    recipient_id = (recipient_id or "").strip()
+    if not request_id or not recipient_id:
+        return None
+
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             UPDATE payment_requests
@@ -140,7 +152,10 @@ def reject_pending_request_atomic(
                 , requester_id
                 , recipient_id
                 , amount
+                , status
+                , created_at
+                , resolved_at
             """,
             (request_id, recipient_id),
         )
-        return _fetchone_dict(cur)
+        return cur.fetchone()
