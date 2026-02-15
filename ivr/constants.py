@@ -2,7 +2,7 @@ TYPE_HE = {
     "deposit": "הופקדו",
     "withdraw": "נמשכו",
     "transfer": "הועברו",
-    "payment_approve": "אושר בקשת תשלום",
+    "payment_approve": "אושרה בקשת תשלום",
     "payment_reject": "נדחתה בקשת תשלום",
     "payment_request": "נשלחה בקשת תשלום",
 }

@@ -27,7 +27,7 @@ from domain.users_services import (
 from domain.wallet_services import get_balance
 from ivr.constants import EDIT_FIELDS
 from ivr.formatters import present_value, clean, format_sent_request_line, format_text_line
-from ivr.yemot_commands import yemot_read, yemot_menu
+from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_play
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
@@ -57,34 +57,34 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
     if action == "check_existence":
         if not phone_number:
-            return "tts=שגיאה: מספר טלפון לא זוהה.\nhangup"
+            return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
         result = check_user_existence(conn, phone_number)
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה במערכת").replace("&", " ")
-            return f"tts={msg}\nhangup"
+            return yemot_error("ERR_SYSTEM", hangup=True)
 
-        # אם לא קיים → שלוחה 3 (רישום)
         if not result.get("exists"):
             return "go_to_folder=/3"
 
-        # אם קיים → מבקשים קוד סודי
         secret_code = _get_param(request, "secret_code")
         if not secret_code:
-            return yemot_read("הקש את הקוד הסודי שלך", "secret_code", 6, 6, read_type="Digits", confirm=True)
+            return yemot_read(
+                yemot_prompt("AUTH_ENTER_SECRET"),
+                "secret_code",
+                6, 6,
+                read_type="Digits",
+                confirm=True
+            )
 
         auth = authenticate_user(conn, phone_number, secret_code)
-
-        # ✅ שלב 4: לא לשמור secret_code בסשן
         session_delete(request, "secret_code")
 
         if not auth.get("success"):
             session_delete(request, "authenticated", "user_id")
-            msg = (auth.get("message") or "קוד שגוי").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            # שימי לב: go_to_folder="/" או "../" לפי איפה את רוצה להחזיר
+            return yemot_error("AUTH_WRONG_CODE", go_to_folder="/")
 
-        # ✅ רק אחרי הצלחה — שומרים סשן
         session_set(request, "user_id", auth["user"]["id"])
         session_set(request, "authenticated", "1")
         session_set(request, "phone", phone_number)
@@ -93,30 +93,53 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
     if action == "open_account":
         if not phone_number:
-            return "tts=שגיאה: מספר טלפון לא זוהה.\nhangup"
+            return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
         secret_code = _get_param(request, "secret_code")
         bank_number = _get_param(request, "bank_number")
         branch_number = _get_param(request, "branch_number")
         account_number = _get_param(request, "account_number")
 
-        # כרגע שם ברירת מחדל (אפשר להחליף בהקלטה בהמשך)
         name = _get_param(request, "name")
         if not name:
             last4 = phone_number[-4:] if len(phone_number) >= 4 else phone_number
             name = f"user_{last4}"
 
         if not secret_code:
-            return yemot_read("הקש קוד סודי בן 6 ספרות", "secret_code", 6, 6, read_type="Digits", confirm=True)
+            return yemot_read(
+                yemot_prompt("AUTH_ENTER_SECRET"),
+                "secret_code",
+                6, 6,
+                read_type="Digits",
+                confirm=True
+            )
 
         if not bank_number:
-            return yemot_read("הקש מספר בנק", "bank_number", 2, 2, read_type="Digits", confirm=True)
+            return yemot_read(
+                yemot_prompt("REG_ENTER_BANK"),
+                "bank_number",
+                2, 2,
+                read_type="Digits",
+                confirm=True
+            )
 
         if not branch_number:
-            return yemot_read("הקש מספר סניף", "branch_number", 3, 3, read_type="Digits", confirm=True)
+            return yemot_read(
+                yemot_prompt("REG_ENTER_BRANCH"),
+                "branch_number",
+                3, 3,
+                read_type="Digits",
+                confirm=True
+            )
 
         if not account_number:
-            return yemot_read("הקש מספר חשבון", "account_number", 6, 6, read_type="Digits", confirm=True)
+            return yemot_read(
+                yemot_prompt("REG_ENTER_ACCOUNT"),
+                "account_number",
+                6, 6,
+                read_type="Digits",
+                confirm=True
+            )
 
         result = open_account(
             conn,
@@ -131,12 +154,15 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         session_delete(request, "secret_code", "bank_number", "branch_number", "account_number", "name")
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה במערכת").replace("&", " ")
-            if result.get("error_code") == "PHONE_ALREADY_EXISTS":
-                return f"id_list_message=t-{msg}&go_to_folder=/2"
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            if result.get("error_code") != "PHONE_ALREADY_EXISTS":
+                return yemot_error("ERR_SYSTEM", go_to_folder="../")
 
-        return "id_list_message=t-נרשמת בהצלחה&go_to_folder=/2"
+            # זה טקסט דינמי; אם אין לך הקלטה ספציפית לזה — להשאיר טקסט
+            msg = (result.get("message") or "מספר טלפון כבר רשום").replace("&", " ")
+            return yemot_say(msg, go_to_folder="/2")
+
+        # הצלחה מוקלטת
+        return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
 
     if action == "get_balance":
         user_id, err = require_auth(request)
@@ -146,18 +172,17 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         result = get_balance(conn, user_id=user_id)
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
 
         balance = float(result["balance"])
         shekels = int(balance)
         agorot = int(round((balance - shekels) * 100))
 
-        text = f"יתרתך היא {shekels} שקלים"
+        text = f"{shekels}"
         if agorot:
-            text += f" ו {agorot} אגורות"
+            text += f" ו {agorot}"
 
-        return f"id_list_message=t-{text}&go_to_folder=../"
+        return yemot_say(text, go_to_folder="../")
 
     if action == "transfer":
         from_user_id, err = require_auth(request)
@@ -169,7 +194,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not to_phone:
             return yemot_read(
-                "הקש את מספר הטלפון של מקבל ההעברה",
+                yemot_prompt("TR_ENTER_TO_PHONE"),
                 "to_phone",
                 9,
                 10,
@@ -179,7 +204,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not amount_str:
             return yemot_read(
-                "הקש את סכום ההעברה בשקלים ללא אגורות",
+                yemot_prompt("TR_ENTER_AMOUNT"),
                 "amount_transfer",
                 1,
                 8,
@@ -187,28 +212,25 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True,
             )
 
-        # המרה לסכום
         try:
             amount = float(amount_str)
         except ValueError:
             session_delete(request, "amount_transfer")
-            return "id_list_message=t-סכום לא תקין&go_to_folder=../"
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
 
         to_user_id = get_user_id_by_phone_service(conn, to_phone)
         if not to_user_id:
             session_delete(request, "to_phone", "amount_transfer")
-            return "id_list_message=t-לא נמצא משתמש עם המספר שהוקש&go_to_folder=../"
+            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")
 
         result = transfer(conn, from_user_id=from_user_id, to_user_id=to_user_id, amount=amount)
 
-        # ניקוי נתוני פעולה (לא להשאיר בזיכרון)
         session_delete(request, "to_phone", "amount_transfer")
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
 
-        return "id_list_message=t-ההעברה בוצעה בהצלחה&go_to_folder=../"
+        return yemot_say(yemot_prompt("TR_SUCCESS"), go_to_folder="../")
 
     if action == "request_payment":
         requester_id, err = require_auth(request)
@@ -220,7 +242,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not pay_req_phone:
             return yemot_read(
-                "הקש את מספר הטלפון ממי לבקש את התשלום",
+                yemot_prompt("PR_ENTER_PHONE"),
                 "pay_req_phone",
                 9,
                 10,
@@ -230,7 +252,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not pay_req_amount_str:
             return yemot_read(
-                "הקש את סכום הבקשה בשקלים ללא אגורות",
+                yemot_prompt("PR_ENTER_AMOUNT"),
                 "pay_req_amount",
                 1,
                 8,
@@ -242,28 +264,21 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             amount = float(pay_req_amount_str)
         except ValueError:
             session_delete(request, "pay_req_amount")
-            return "id_list_message=t-סכום לא תקין&go_to_folder=../"
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")  # "סכום לא תקין"
 
         recipient_id = get_user_id_by_phone_service(conn, pay_req_phone)
         if not recipient_id:
             session_delete(request, "pay_req_phone", "pay_req_amount")
-            return "id_list_message=t-לא נמצא משתמש עם המספר שהוקש&go_to_folder=../"
+            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")  # "לא נמצא משתמש..."
 
         result = request_payment(conn, requester_id=requester_id, recipient_id=recipient_id, amount=amount)
 
-        # ניקוי נתוני פעולה
         session_delete(request, "pay_req_phone", "pay_req_amount")
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
 
-        req_id = result.get("request_id")
-        # לא חובה להשמיע מזהה, אבל אפשר:
-        if req_id:
-            return f"id_list_message=t-בקשת התשלום נשלחה בהצלחה &go_to_folder=../"
-
-        return "id_list_message=t-בקשת התשלום נשלחה בהצלחה&go_to_folder=../"
+        return yemot_say(yemot_prompt("PR_SUCCESS"), go_to_folder="../")
 
     if action == "deposit":
         user_id, err = require_auth(request)
@@ -274,7 +289,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not amount_str:
             return yemot_read(
-                "הקש את הסכום שברצונך להפקיד בשקלים ללא אגורות",
+                yemot_prompt("DEP_ENTER_AMOUNT"),
                 "amount_d",
                 1,
                 8,
@@ -286,7 +301,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             amount = float(amount_str)
         except ValueError:
             session_delete(request, "amount_d", "amount_deposit")
-            return "id_list_message=t-סכום לא תקין&go_to_folder=../"
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
 
         result = deposit(conn, user_id=user_id, amount=amount)
 
@@ -294,10 +309,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         session_delete(request, "amount_d", "amount_deposit")
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
 
-        return "id_list_message=t-הפקדה בוצעה בהצלחה&go_to_folder=../"
+        return yemot_say(yemot_prompt("DEP_SUCCESS"), go_to_folder="../")
 
     if action == "withdraw":
         user_id, err = require_auth(request)
@@ -308,7 +322,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not amount_str:
             return yemot_read(
-                "הקש את הסכום שברצונך למשוך בשקלים ללא אגורות",
+                yemot_prompt("WDR_ENTER_AMOUNT"),
                 "amount_w",
                 1,
                 8,
@@ -320,7 +334,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             amount = float(amount_str)
         except ValueError:
             session_delete(request, "amount_w", "amount_withdraw")
-            return "id_list_message=t-סכום לא תקין&go_to_folder=../"
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
 
         result = withdraw(conn, user_id=user_id, amount=amount)
 
@@ -328,10 +342,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         session_delete(request, "amount_w", "amount_withdraw")
 
         if not result.get("success"):
-            msg = (result.get("message") or "שגיאה").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=../"
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
 
-        return "id_list_message=t-משיכה בוצעה בהצלחה&go_to_folder=../"
+        return yemot_say(yemot_prompt("WDR_SUCCESS"), go_to_folder="../")
 
     if action == "received_requests":
         user_id, err = require_auth(request)
@@ -340,18 +353,14 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         res = get_my_payment_requests(conn, user_id=user_id)
         if not res.get("success"):
-            return "id_list_message=t-שגיאה בשליפת בקשות תשלום&go_to_folder=../"
+            return yemot_error("RR_FETCH_ERROR", go_to_folder="../")
 
         requests_list = res.get("requests") or []
-
-        # אם יש לך סטטוס בבקשה (pending/approved/rejected) מומלץ לסנן רק pending:
         pending = [r for r in requests_list if (r.get("status") in (None, "", "pending"))]
         if not pending:
-            # ניקוי מצב
             session_delete(request, "req_i", "req_id")
-            return "id_list_message=t-לא קיימות בקשות תשלום ממתינות&go_to_folder=../"
+            return yemot_say(yemot_prompt("RR_NONE_PENDING"), go_to_folder="../")
 
-        # קריאת state מהסשן
         try:
             i = int(session_get(request, "req_i") or "0")
         except ValueError:
@@ -360,53 +369,44 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if i < 0:
             i = 0
         if i >= len(pending):
-            # הגענו לסוף
             session_delete(request, "req_i", "req_id")
-            return "id_list_message=t-אין בקשות נוספות&go_to_folder=../"
+            return yemot_say(yemot_prompt("RR_NO_MORE"), go_to_folder="../")
 
         current = pending[i]
         req_id = str(current.get("id", ""))
 
-        # שמירה בסשן כדי ש-choice ידע על מה לפעול
         session_set(request, "req_i", str(i))
         session_set(request, "req_id", req_id)
 
-        # אם המשתמש כבר בחר 1/2/3
         choice = _get_param(request, "choice")
 
-        # approve
         if choice == "1":
             rid = session_get(request, "req_id")
             if not rid:
-                return "id_list_message=t-שגיאה בזיהוי הבקשה&go_to_folder=../"
+                return yemot_error("RR_IDENTIFY_ERROR", go_to_folder="../")
 
-            out = approve_payment_request(conn, user_id=user_id, request_id=rid)
-            # אחרי טיפול — עוברים לבקשה הבאה
+            approve_payment_request(conn, user_id=user_id, request_id=rid)
             session_set(request, "req_i", str(i + 1))
             session_delete(request, "choice", "req_id")
-            msg = (out.get("message") or "בוצע").replace("&", " ")
-            # נשארים באותה שלוחה כדי להשמיע את הבקשה הבאה
-            return f"id_list_message=t-{msg}&go_to_folder=./"
 
-        # reject
+            return yemot_say(yemot_prompt("RR_DONE"), go_to_folder="./")
+
         if choice == "2":
             rid = session_get(request, "req_id")
             if not rid:
-                return "id_list_message=t-שגיאה בזיהוי הבקשה&go_to_folder=../"
+                return yemot_error("RR_IDENTIFY_ERROR", go_to_folder="../")
 
-            out = reject_payment_request(conn, user_id=user_id, request_id=rid)
+            reject_payment_request(conn, user_id=user_id, request_id=rid)
             session_set(request, "req_i", str(i + 1))
             session_delete(request, "choice", "req_id")
-            msg = (out.get("message") or "בוצע").replace("&", " ")
-            return f"id_list_message=t-{msg}&go_to_folder=./"
 
-        # next
+            return yemot_say(yemot_prompt("RR_DONE"), go_to_folder="./")
+
         if choice == "3":
             session_set(request, "req_i", str(i + 1))
             session_delete(request, "choice", "req_id")
             return "go_to_folder=./"
 
-        # אחרת: צריך להשמיע את הבקשה הנוכחית + להציע 1/2/3
         amount = current.get("amount")
         try:
             amount_num = int(float(amount))
@@ -421,9 +421,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             f"לאישור הקישו 1. לדחייה הקישו 2. לבקשה הבאה הקישו 3."
         )
 
-        resp = yemot_menu(text, "choice", timeout=7, options="1.2.3", confirm=False)
-        logger.info("REQ_MENU resp=%s", resp)
-        return resp
+        return yemot_menu(text, "choice", timeout=7, options="1.2.3", confirm=False)
 
     if action == "sent_requests":
         user_id, err = require_auth(request)
@@ -453,12 +451,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         res = get_my_sent_payment_requests(conn, user_id=user_id)
         if not res.get("success"):
             session_delete(request, "sent_req_offset", "sent_next_choice")
-            return "id_list_message=t-שגיאה בשליפת בקשות שנשלחו&go_to_folder=../"
+            return yemot_error("SR_FETCH_ERROR", go_to_folder="../")
 
         sent = res.get("requests") or []
         if not sent:
             session_delete(request, "sent_req_offset", "sent_next_choice")
-            return "id_list_message=t-לא נמצאו בקשות תשלום שנשלחו&go_to_folder=../"
+            return yemot_say(yemot_prompt("SR_NONE"), go_to_folder="../")
 
         batch = sent[offset: offset + (page + 1)]
         has_more = len(batch) > page
@@ -467,18 +465,22 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         lines = [format_sent_request_line(dict(r)) for r in batch]
         message_text = " , ".join(lines)
 
-        logger.info("sent_requests message_text: %s", message_text)
-
         if has_more:
-            # כמו שעשית ב-history: בלי אישור על הבחירה
-            return (
-                f"read=t-{message_text}, "
-                f"לשמיעת בקשות נוספות הקישו 1, לחזרה הקישו 2"
-                f"=sent_next_choice,Digits,1,1,7,No,No,No,10,,,,,,,,no"
+            # כאן יש טקסט דינמי (הרשימה), אבל סיומת התפריט מוקלטת
+            # נשלב הכל בטקסט אחד (יציב)
+            return yemot_menu(
+                f"{message_text}. לשמיעת בקשות נוספות הקישו 1, לחזרה הקישו 2.",
+                "sent_next_choice",
+                timeout=7,
+                options="1.2",
+                confirm=False,
             )
 
         session_delete(request, "sent_req_offset", "sent_next_choice")
-        return f"id_list_message=t-{message_text}, סוף בקשות&go_to_folder=../"
+        # return yemot_say(f"{message_text}, סוף בקשות", go_to_folder="../")
+
+        return yemot_say(f"{message_text}.", go_to_folder=None) + "&" + yemot_play(yemot_prompt("SR_END"),
+                                                                                   go_to_folder="../")
 
     if action == "history":
         user_id, err = require_auth(request)
@@ -499,32 +501,27 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 "history_range_end_iso",
             )
 
-        # קוראים בחירה/דפדוף גם מה-session
         history_choice = _get_param(request, "history_choice") or session_get(request, "history_choice")
         history_next_choice = _get_param(request, "history_next_choice") or session_get(request, "history_next_choice")
 
-        # חזרה
         if history_next_choice == "2":
             _reset()
             return "go_to_folder=./"
 
-        # offset
         try:
             offset = int(session_get(request, "history_offset") or "0")
         except ValueError:
             offset = 0
 
-        # עוד
         if history_next_choice == "1":
             offset += page
             session_set(request, "history_offset", str(offset))
             session_delete(request, "history_next_choice")
 
-        # אם אין בחירת טווח – תפריט בחירה
         if not history_choice:
             _reset()
             return yemot_menu(
-                "לבחירת טווח היסטוריה. להיום הקישו 1. לשבוע הנוכחי הקישו 2. לחודש הנוכחי הקישו 3. לטווח תאריכים הקישו 4.",
+                yemot_prompt("HIST_RANGE_MENU"),
                 "history_choice",
                 timeout=7,
                 options="1.2.3.4",
@@ -533,12 +530,10 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         session_set(request, "history_choice", history_choice)
 
-        # טווח מה-session אם קיים
         start_iso = session_get(request, "history_range_start_iso")
         end_iso = session_get(request, "history_range_end_iso")
 
         if not start_iso or not end_iso:
-            # בחירת טווח חדשה -> מאפסים דפדוף
             session_set(request, "history_offset", "0")
             offset = 0
 
@@ -547,24 +542,37 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 end_str = _get_param(request, "history_end_date") or session_get(request, "history_end_date")
 
                 if not start_str:
-                    return yemot_read("הקש תאריך התחלה בפורמט שמונה ספרות לדוגמה 20260201", "history_start_date", 8, 8,
-                                      read_type="Digits", confirm=True)
+                    return yemot_read(
+                        yemot_prompt("HIST_ENTER_START"),
+                        "history_start_date",
+                        8, 8,
+                        read_type="Digits",
+                        confirm=True
+                    )
                 if not end_str:
-                    return yemot_read("הקש תאריך סיום בפורמט שמונה ספרות לדוגמה 20260208", "history_end_date", 8, 8,
-                                      read_type="Digits", confirm=True)
+                    return yemot_read(
+                        yemot_prompt("HIST_ENTER_END"),
+                        "history_end_date",
+                        8, 8,
+                        read_type="Digits",
+                        confirm=True
+                    )
 
                 try:
-                    start_dt = datetime.strptime(start_str, "%Y%m%d").replace(hour=0, minute=0, second=0, microsecond=0,
-                                                                              tzinfo=timezone.utc)
-                    end_dt = datetime.strptime(end_str, "%Y%m%d").replace(hour=23, minute=59, second=59,
-                                                                          microsecond=999999, tzinfo=timezone.utc)
+                    start_dt = datetime.strptime(start_str, "%Y%m%d").replace(
+                        hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+                    )
+                    end_dt = datetime.strptime(end_str, "%Y%m%d").replace(
+                        hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
+                    )
                 except ValueError:
                     session_delete(request, "history_start_date", "history_end_date")
-                    return "id_list_message=t-תאריך לא תקין נסו שוב&go_to_folder=./"
+                    return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
 
                 if end_dt < start_dt:
                     session_delete(request, "history_start_date", "history_end_date")
-                    return "id_list_message=t-תאריך סיום לפני תאריך התחלה נסו שוב&go_to_folder=./"
+                    return yemot_say(yemot_prompt("HIST_END_BEFORE_START"), go_to_folder="./")
+
             else:
                 now = datetime.now(timezone.utc)
                 if history_choice == "1":
@@ -579,14 +587,13 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                     end_dt = now
                 else:
                     session_delete(request, "history_choice")
-                    return "id_list_message=t-בחירה לא תקינה&go_to_folder=./"
+                    return yemot_error("ERR_INVALID_CHOICE", go_to_folder="./")
 
             session_set(request, "history_range_start_iso", start_dt.isoformat())
             session_set(request, "history_range_end_iso", end_dt.isoformat())
             start_iso = start_dt.isoformat()
             end_iso = end_dt.isoformat()
 
-        # שליפה
         start_dt = datetime.fromisoformat(start_iso)
         end_dt = datetime.fromisoformat(end_iso)
 
@@ -600,12 +607,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         )
         if not result.get("success"):
             session_delete(request, "history_next_choice")
-            return "id_list_message=t-שגיאה בשליפת היסטוריה&go_to_folder=./"
+            return yemot_error("HIST_FETCH_ERROR", go_to_folder="./")
 
         history = result.get("history") or []
         if not history:
             _reset()
-            return "id_list_message=t-אין פעולות בטווח שבחרת&go_to_folder=./"
+            return yemot_say(yemot_prompt("HIST_EMPTY"), go_to_folder="./")
 
         has_more = len(history) > page
         history = history[:page]
@@ -622,7 +629,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             )
 
         _reset()
-        return f"id_list_message=t-{message_text}, סוף פעולות&go_to_folder=./"
+        return yemot_say(f"{message_text}, סוף פעולות", go_to_folder="./")
 
     if action == "edit_profile":
         user_id, err = require_auth(request)
@@ -634,48 +641,38 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         except ValueError:
             idx = 0
 
-        # אם הסתיים
         if idx >= len(EDIT_FIELDS):
             session_delete(request, "edit_idx", "edit_choice")
-            # מוחקים גם את משתני ה-input אם נשארו
             session_delete(
                 request,
                 "new_name", "new_phone", "new_secret_code",
                 "new_bank_number", "new_branch_number", "new_account_number",
                 "new_account_holder"
             )
-            return "id_list_message=t-סיימנו לעדכן את הפרטים&go_to_folder=../"
+            return yemot_say(yemot_prompt("EDIT_DONE"), go_to_folder="../")
 
         field_key, label, var_name, mn, mx, read_type = EDIT_FIELDS[idx]
 
-        # להביא משתמש כדי להשמיע ערך נוכחי
-        me = get_me(conn, user_id=user_id)  # צריך שיחזיר dict עם שדות תואמים
+        me = get_me(conn, user_id=user_id)
         if not me or not me.get("success"):
-            return "id_list_message=t-שגיאה בשליפת פרטי משתמש&go_to_folder=../"
+            return yemot_say(yemot_prompt("EDIT_FETCH_USER_ERROR"), go_to_folder="../")
 
         user = me.get("user") or {}
         current_value = present_value(field_key, user.get(field_key))
 
-        # אם הגיע קלט חדש לשדה (אחרי yemot_read)
         new_val = _get_param(request, var_name)
         if new_val:
-            # מבצעים עדכון
             kwargs = {field_key: new_val}
             out = update_me(conn, user_id=user_id, **kwargs)
 
-            # מנקים את המשתנה כדי שלא “ייתקע”
             session_delete(request, var_name)
 
             if not out.get("success"):
-                msg = clean(out.get("message") or "שגיאה בעדכון")
-                # נשארים על אותו שדה כדי שינסה שוב
-                return f"id_list_message=t-{msg}&go_to_folder=./"
+                return yemot_say(yemot_prompt("EDIT_UPDATE_ERROR"), go_to_folder="./")
 
-            # הצליח → עוברים לשדה הבא
             session_set(request, "edit_idx", str(idx + 1))
-            return "id_list_message=t-הפרט עודכן&go_to_folder=./"
+            return yemot_say(yemot_prompt("EDIT_UPDATED"), go_to_folder="./")
 
-        # בחירת המשתמש: 1 לערוך, 2 הבא, 3 יציאה
         choice = _get_param(request, "edit_choice")
 
         if choice == "2":
@@ -691,20 +688,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 "new_bank_number", "new_branch_number", "new_account_number",
                 "new_account_holder"
             )
-            return "id_list_message=t-יציאה מעדכון פרטים&go_to_folder=../"
+            return yemot_say(yemot_prompt("EDIT_EXIT"), go_to_folder="../")
 
         if choice == "1":
             session_delete(request, "edit_choice")
-            # מבקשים ערך חדש לשדה הנוכחי
+            # כאן יש label דינמי -> נשאיר טקסט
             prompt = f"להזנת {label} חדש, הקישו כעת"
             return yemot_read(prompt, var_name, mn, mx, read_type=read_type, confirm=True)
 
-        # אם אין בחירה עדיין: נשמיע שדה + ערך + תפריט
+        # תפריט ראשי לשדה (דינמי: label + current_value)
         text = (
             f"הפרט הבא הוא {label}. הערך הנוכחי הוא {current_value}. "
             f"לעדכון הקישו 1. לפרט הבא הקישו 2. ליציאה הקישו 3."
         )
-        # תפריט בלי בקשת אישור (confirm=False)
         return yemot_menu(text, "edit_choice", timeout=7, options="1.2.3", confirm=False)
 
     return "id_list_message=t-פעולה לא נתמכת&go_to_folder=../"
