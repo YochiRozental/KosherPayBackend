@@ -192,12 +192,21 @@ def yemot_menu(
     return f"read={first_part}={var},Digits,1,1,{timeout},No,AskNo,,,{options},,,,,,,,{confirm_value}"
 
 
-# Optional helpers (recommended)
 def yemot_say(message: YemotMessage, *, go_to_folder: str | None = None) -> str:
     """
     Unified 'id_list_message' builder (text or file).
     """
     base = f"id_list_message={yemot_first_part(message, clean_text=True)}"
+    return f"{base}&go_to_folder={go_to_folder}" if go_to_folder else base
+
+
+def yemot_say_parts(parts: list[YemotMessage], *, go_to_folder: str | None = None) -> str:
+    """
+    Say a sequence of parts (text/files) in order.
+    IMPORTANT: Yemot separates id_list_message parts using '.' (dot), not ','.
+    """
+    joined = ".".join(yemot_first_part(p, clean_text=True) for p in parts)
+    base = f"id_list_message={joined}"
     return f"{base}&go_to_folder={go_to_folder}" if go_to_folder else base
 
 

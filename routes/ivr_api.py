@@ -27,7 +27,8 @@ from domain.users_services import (
 from domain.wallet_services import get_balance
 from ivr.constants import EDIT_FIELDS
 from ivr.formatters import present_value, clean, format_sent_request_line, format_text_line
-from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_play
+from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_play, \
+    yemot_say_parts, YemotMessage
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
@@ -170,7 +171,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             return err
 
         result = get_balance(conn, user_id=user_id)
-
         if not result.get("success"):
             return yemot_error("ERR_GENERIC", go_to_folder="../")
 
@@ -178,11 +178,24 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         shekels = int(balance)
         agorot = int(round((balance - shekels) * 100))
 
-        text = f"{shekels}"
-        if agorot:
-            text += f" ו {agorot}"
+        if agorot == 100:
+            shekels += 1
+            agorot = 0
 
-        return yemot_say(text, go_to_folder="../")
+        parts: list[YemotMessage] = [
+            yemot_prompt("BAL_YOUR_BALANCE_IS"),
+            str(shekels),
+            yemot_prompt("CUR_SHEKELS"),
+        ]
+
+        if agorot:
+            parts += [
+                yemot_prompt("CUR_AND"),
+                str(agorot),
+                yemot_prompt("CUR_AGOROT"),
+            ]
+
+        return yemot_say_parts(parts, go_to_folder="../")
 
     if action == "transfer":
         from_user_id, err = require_auth(request)
