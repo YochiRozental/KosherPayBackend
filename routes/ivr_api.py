@@ -393,27 +393,57 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         choice = _get_param(request, "choice")
 
-        if choice == "1":
-            rid = session_get(request, "req_id")
-            if not rid:
-                return yemot_error("RR_IDENTIFY_ERROR", go_to_folder="../")
+        last_req = session_get(request, "last_handled_req_id")
+        last_choice = session_get(request, "last_handled_choice")
 
-            approve_payment_request(conn, user_id=user_id, request_id=rid)
-            session_set(request, "req_i", str(i + 1))
+        if choice and last_req == req_id and last_choice == choice:
+            session_delete(request, "choice", "req_id")
+            return "go_to_folder=./"
+
+        requester_name = current.get("requester_name") or "משתמש"
+        amount = current.get("amount")
+        try:
+            amount_num = int(float(amount))
+        except (ValueError, TypeError):
+            amount_num = 0
+
+        if choice == "1":
+            approve_payment_request(conn, user_id=user_id, request_id=req_id)
+
+            session_set(request, "last_handled_req_id", req_id)
+            session_set(request, "last_handled_choice", "1")
+            session_set(request, "req_i", str(i))
             session_delete(request, "choice", "req_id")
 
-            return yemot_say(yemot_prompt("RR_DONE"), go_to_folder="./")
+            parts: list[YemotMessage] = [
+                yemot_prompt("RR_FROM"),  # "בקשת תשלום מאת"
+                clean(requester_name),  # טקסט דינמי (שם)
+                yemot_prompt("RR_AMOUNT"),  # "על סך"
+                str(amount_num),  # מספר דינמי
+                yemot_prompt("CUR_SHEKELS"),  # "שקלים" (אם יש לך)
+                yemot_prompt("RR_APPROVED_OK"),  # "בוצעה בהצלחה"
+            ]
+
+            return yemot_say_parts(parts, go_to_folder="./")
 
         if choice == "2":
-            rid = session_get(request, "req_id")
-            if not rid:
-                return yemot_error("RR_IDENTIFY_ERROR", go_to_folder="../")
+            reject_payment_request(conn, user_id=user_id, request_id=req_id)
 
-            reject_payment_request(conn, user_id=user_id, request_id=rid)
-            session_set(request, "req_i", str(i + 1))
+            session_set(request, "last_handled_req_id", req_id)
+            session_set(request, "last_handled_choice", "2")
+            session_set(request, "req_i", str(i))
             session_delete(request, "choice", "req_id")
 
-            return yemot_say(yemot_prompt("RR_DONE"), go_to_folder="./")
+            parts: list[YemotMessage] = [
+                yemot_prompt("RR_FROM"),
+                clean(requester_name),
+                yemot_prompt("RR_AMOUNT"),
+                str(amount_num),
+                yemot_prompt("CUR_SHEKELS"),
+                yemot_prompt("RR_REJECTED_OK"),
+            ]
+
+            return yemot_say_parts(parts, go_to_folder="./")
 
         if choice == "3":
             session_set(request, "req_i", str(i + 1))

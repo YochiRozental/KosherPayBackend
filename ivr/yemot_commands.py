@@ -77,6 +77,8 @@ PROMPTS = {
     "RR_FROM": "610",
     "RR_AMOUNT": "611",
     "RR_MENU": "612",
+    "RR_APPROVED_OK": "613",
+    "RR_REJECTED_OK": "614",
 
     # Sent requests
     "SR_FETCH_ERROR": "930",

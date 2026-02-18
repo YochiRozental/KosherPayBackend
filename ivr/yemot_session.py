@@ -14,7 +14,6 @@ ALLOWED_KEYS = {
     "branch_number",
     "account_number",
     "name",
-    "choice",
     "recipient_phone",
     "amount",
     "amount_t",
