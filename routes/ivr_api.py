@@ -400,13 +400,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "choice", "req_id")
             return "go_to_folder=./"
 
-        requester_name = current.get("requester_name") or "משתמש"
-        amount = current.get("amount")
-        try:
-            amount_num = int(float(amount))
-        except (ValueError, TypeError):
-            amount_num = 0
-
         if choice == "1":
             approve_payment_request(conn, user_id=user_id, request_id=req_id)
 
@@ -415,16 +408,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_set(request, "req_i", str(i))
             session_delete(request, "choice", "req_id")
 
-            parts: list[YemotMessage] = [
-                yemot_prompt("RR_FROM"),  # "בקשת תשלום מאת"
-                clean(requester_name),  # טקסט דינמי (שם)
-                yemot_prompt("RR_AMOUNT"),  # "על סך"
-                str(amount_num),  # מספר דינמי
-                yemot_prompt("CUR_SHEKELS"),  # "שקלים" (אם יש לך)
-                yemot_prompt("RR_APPROVED_OK"),  # "בוצעה בהצלחה"
-            ]
-
-            return yemot_say_parts(parts, go_to_folder="./")
+            return yemot_say(yemot_prompt("RR_APPROVED_OK"), go_to_folder="./")
 
         if choice == "2":
             reject_payment_request(conn, user_id=user_id, request_id=req_id)
@@ -434,16 +418,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_set(request, "req_i", str(i))
             session_delete(request, "choice", "req_id")
 
-            parts: list[YemotMessage] = [
-                yemot_prompt("RR_FROM"),
-                clean(requester_name),
-                yemot_prompt("RR_AMOUNT"),
-                str(amount_num),
-                yemot_prompt("CUR_SHEKELS"),
-                yemot_prompt("RR_REJECTED_OK"),
-            ]
-
-            return yemot_say_parts(parts, go_to_folder="./")
+            return yemot_say(yemot_prompt("RR_REJECTED_OK"), go_to_folder="./")
 
         if choice == "3":
             session_set(request, "req_i", str(i + 1))
@@ -451,6 +426,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             return "go_to_folder=./"
 
         amount = current.get("amount")
+
         try:
             amount_num = int(float(amount))
         except (ValueError, TypeError):
@@ -458,13 +434,16 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         requester_name = current.get("requester_name") or "משתמש"
 
-        text = (
-            f"בקשת תשלום מאת {requester_name}. "
-            f"סכום {amount_num} שקלים. "
-            f"לאישור הקישו 1. לדחייה הקישו 2. לבקשה הבאה הקישו 3."
-        )
+        parts: list[YemotMessage] = [
+            yemot_prompt("RR_FROM"),  # "בקשת תשלום מאת"
+            clean(requester_name),  # שם דינמי (TTS)
+            yemot_prompt("RR_AMOUNT"),  # "סכום" / "על סך"
+            str(amount_num),  # מספר
+            yemot_prompt("CUR_SHEKELS"),  # "שקלים"
+            yemot_prompt("RR_MENU"),  # "לאישור 1 לדחייה 2 לבקשה הבאה 3" (הקלטה אחת מומלצת)
+        ]
 
-        return yemot_menu(text, "choice", timeout=7, options="1.2.3", confirm=False)
+        return yemot_menu(parts, "choice", timeout=7, options="1.2.3", confirm=False)
 
     if action == "sent_requests":
         user_id, err = require_auth(request)

@@ -179,7 +179,7 @@ def yemot_read(
 
 
 def yemot_menu(
-        text: YemotMessage,
+        text: Union[YemotMessage, list[YemotMessage]],
         var: str,
         *,
         timeout: int = 7,
@@ -188,8 +188,10 @@ def yemot_menu(
 ) -> str:
     confirm_value = "yes" if confirm else "no"
 
-    # This is the key fix: allow file/audio prompts too
-    first_part = yemot_first_part(text, clean_text=True)
+    if isinstance(text, list):
+        first_part = yemot_render_parts(text, clean_text=True)
+    else:
+        first_part = yemot_first_part(text, clean_text=True)
 
     return f"read={first_part}={var},Digits,1,1,{timeout},No,AskNo,,,{options},,,,,,,,{confirm_value}"
 
@@ -210,6 +212,10 @@ def yemot_say_parts(parts: list[YemotMessage], *, go_to_folder: str | None = Non
     joined = ".".join(yemot_first_part(p, clean_text=True) for p in parts)
     base = f"id_list_message={joined}"
     return f"{base}&go_to_folder={go_to_folder}" if go_to_folder else base
+
+
+def yemot_render_parts(parts: list[YemotMessage], *, clean_text: bool = True) -> str:
+    return ".".join(yemot_first_part(p, clean_text=clean_text) for p in parts)
 
 
 def yemot_play(message: YemotMessage, *, go_to_folder: str | None = None) -> str:
