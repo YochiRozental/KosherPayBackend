@@ -85,6 +85,14 @@ PROMPTS = {
     "SR_NONE": "931",
     "SR_MORE_OR_BACK": "632",
     "SR_END": "633",
+    "SR_SENT_REQUEST_TO": "620",
+    "TODAY": "621",
+    "YESTERDAY": "622",
+    "DATE": "623",
+    "SR_ON_SUM_OF": "624",
+    "SR_STATUS_PENDING": "641",
+    "SR_STATUS_APPROVED": "642",
+    "SR_STATUS_REJECTED": "643",
 
     # History
     "HIST_RANGE_MENU": "700",

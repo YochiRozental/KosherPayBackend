@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
@@ -26,13 +27,23 @@ from domain.users_services import (
 )
 from domain.wallet_services import get_balance
 from ivr.constants import EDIT_FIELDS
-from ivr.formatters import present_value, clean, format_sent_request_line, format_text_line
-from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_play, \
-    yemot_say_parts, YemotMessage
+from ivr.formatters import present_value, clean, format_text_line
+from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
+    YemotMessage
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
+
+IL_TZ = ZoneInfo("Asia/Jerusalem")
+
+SR_STATUS_KEY_MAP = {
+    None: "SR_STATUS_PENDING",
+    "": "SR_STATUS_PENDING",
+    "pending": "SR_STATUS_PENDING",
+    "approved": "SR_STATUS_APPROVED",
+    "rejected": "SR_STATUS_REJECTED",
+}
 
 
 def _get_param(request: Request, key: str) -> str:
@@ -83,7 +94,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if not auth.get("success"):
             session_delete(request, "authenticated", "user_id")
-            # שימי לב: go_to_folder="/" או "../" לפי איפה את רוצה להחזיר
             return yemot_error("AUTH_WRONG_CODE", go_to_folder="/")
 
         session_set(request, "user_id", auth["user"]["id"])
@@ -158,11 +168,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             if result.get("error_code") != "PHONE_ALREADY_EXISTS":
                 return yemot_error("ERR_SYSTEM", go_to_folder="../")
 
-            # זה טקסט דינמי; אם אין לך הקלטה ספציפית לזה — להשאיר טקסט
             msg = (result.get("message") or "מספר טלפון כבר רשום").replace("&", " ")
             return yemot_say(msg, go_to_folder="/2")
 
-        # הצלחה מוקלטת
         return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
 
     if action == "get_balance":
@@ -277,12 +285,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             amount = float(pay_req_amount_str)
         except ValueError:
             session_delete(request, "pay_req_amount")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")  # "סכום לא תקין"
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
 
         recipient_id = get_user_id_by_phone_service(conn, pay_req_phone)
         if not recipient_id:
             session_delete(request, "pay_req_phone", "pay_req_amount")
-            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")  # "לא נמצא משתמש..."
+            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")
 
         result = request_payment(conn, requester_id=requester_id, recipient_id=recipient_id, amount=amount)
 
@@ -318,7 +326,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         result = deposit(conn, user_id=user_id, amount=amount)
 
-        # ניקוי נתוני פעולה
         session_delete(request, "amount_d", "amount_deposit")
 
         if not result.get("success"):
@@ -351,7 +358,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         result = withdraw(conn, user_id=user_id, amount=amount)
 
-        # ניקוי נתוני פעולה
         session_delete(request, "amount_w", "amount_withdraw")
 
         if not result.get("success"):
@@ -435,12 +441,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         requester_name = current.get("requester_name") or "משתמש"
 
         parts: list[YemotMessage] = [
-            yemot_prompt("RR_FROM"),  # "בקשת תשלום מאת"
-            clean(requester_name),  # שם דינמי (TTS)
-            yemot_prompt("RR_AMOUNT"),  # "סכום" / "על סך"
-            str(amount_num),  # מספר
-            yemot_prompt("CUR_SHEKELS"),  # "שקלים"
-            yemot_prompt("RR_MENU"),  # "לאישור 1 לדחייה 2 לבקשה הבאה 3" (הקלטה אחת מומלצת)
+            yemot_prompt("RR_FROM"),
+            clean(requester_name),
+            yemot_prompt("RR_AMOUNT"),
+            str(amount_num),
+            yemot_prompt("CUR_SHEKELS"),
+            yemot_prompt("RR_MENU"),
         ]
 
         return yemot_menu(parts, "choice", timeout=7, options="1.2.3", confirm=False)
@@ -484,14 +490,67 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         has_more = len(batch) > page
         batch = batch[:page]
 
-        lines = [format_sent_request_line(dict(r)) for r in batch]
-        message_text = " , ".join(lines)
+        all_parts: list[YemotMessage] = []
+
+        today_il = datetime.now(IL_TZ).date()
+        yesterday_il = today_il - timedelta(days=1)
+
+        for r in batch:
+            rr = dict(r)
+
+            recipient_name = rr.get("recipient_name") or rr.get("to_name") or "משתמש"
+            amount = rr.get("amount")
+
+            try:
+                amount_num = int(float(amount))
+            except (ValueError, TypeError):
+                amount_num = 0
+
+            status = rr.get("status")
+            status_key = SR_STATUS_KEY_MAP.get(status, "SR_STATUS_PENDING")
+
+            created_at_raw = rr.get("created_at") or rr.get("createdAt") or rr.get("requested_at")
+
+            created_dt = None
+            if isinstance(created_at_raw, datetime):
+                created_dt = created_at_raw
+            elif isinstance(created_at_raw, str) and created_at_raw:
+                try:
+                    created_dt = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+                except ValueError:
+                    created_dt = None
+
+            date_parts: list[YemotMessage]
+
+            if not created_dt:
+                date_parts = [yemot_prompt("DATE")]
+            else:
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+
+                created_date_il = created_dt.astimezone(IL_TZ).date()
+
+                if created_date_il == today_il:
+                    date_parts = [yemot_prompt("TODAY")]
+                elif created_date_il == yesterday_il:
+                    date_parts = [yemot_prompt("YESTERDAY")]
+                else:
+                    date_str = created_date_il.strftime("%d/%m/%Y")
+                    date_parts = [yemot_prompt("DATE"), f"date-{date_str}"]
+
+            all_parts += [
+                *date_parts,
+                yemot_prompt("SR_SENT_REQUEST_TO"),
+                clean(recipient_name),
+                yemot_prompt("SR_ON_SUM_OF"),
+                str(amount_num),
+                yemot_prompt("CUR_SHEKELS"),
+                yemot_prompt(status_key),
+            ]
 
         if has_more:
-            # כאן יש טקסט דינמי (הרשימה), אבל סיומת התפריט מוקלטת
-            # נשלב הכל בטקסט אחד (יציב)
             return yemot_menu(
-                f"{message_text}. לשמיעת בקשות נוספות הקישו 1, לחזרה הקישו 2.",
+                all_parts + [yemot_prompt("SR_MORE_OR_BACK")],
                 "sent_next_choice",
                 timeout=7,
                 options="1.2",
@@ -499,10 +558,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             )
 
         session_delete(request, "sent_req_offset", "sent_next_choice")
-        # return yemot_say(f"{message_text}, סוף בקשות", go_to_folder="../")
 
-        return yemot_say(f"{message_text}.", go_to_folder=None) + "&" + yemot_play(yemot_prompt("SR_END"),
-                                                                                   go_to_folder="../")
+        return yemot_say_parts(all_parts + [yemot_prompt("SR_END")], go_to_folder="../")
 
     if action == "history":
         user_id, err = require_auth(request)
@@ -714,11 +771,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if choice == "1":
             session_delete(request, "edit_choice")
-            # כאן יש label דינמי -> נשאיר טקסט
             prompt = f"להזנת {label} חדש, הקישו כעת"
             return yemot_read(prompt, var_name, mn, mx, read_type=read_type, confirm=True)
 
-        # תפריט ראשי לשדה (דינמי: label + current_value)
         text = (
             f"הפרט הבא הוא {label}. הערך הנוכחי הוא {current_value}. "
             f"לעדכון הקישו 1. לפרט הבא הקישו 2. ליציאה הקישו 3."
