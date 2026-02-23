@@ -26,8 +26,8 @@ from domain.users_services import (
     get_me, get_user_id_by_phone_service
 )
 from domain.wallet_services import get_balance
-from ivr.constants import EDIT_FIELDS
-from ivr.formatters import present_value, clean, format_text_line
+from ivr.constants import EDIT_FIELDS, TYPE_HE
+from ivr.formatters import present_value, clean, amount_to_int
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
     YemotMessage
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
@@ -43,6 +43,15 @@ SR_STATUS_KEY_MAP = {
     "pending": "SR_STATUS_PENDING",
     "approved": "SR_STATUS_APPROVED",
     "rejected": "SR_STATUS_REJECTED",
+}
+
+HIST_TYPE_TO_PROMPT = {
+    "payment_request": "HIST_ACT_PAYMENT_REQUEST",
+    "payment_request_approved": "HIST_ACT_PAYMENT_APPROVED",
+    "payment_request_rejected": "HIST_ACT_PAYMENT_REJECTED",
+    "transfer": "HIST_ACT_TRANSFER",
+    "deposit": "HIST_ACT_DEPOSIT",
+    "withdraw": "HIST_ACT_WITHDRAW",
 }
 
 
@@ -696,11 +705,72 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         has_more = len(history) > page
         history = history[:page]
 
-        message_text = clean(" , ".join(format_text_line(dict(tr)) for tr in history))
+        all_parts: list[YemotMessage] = []
+
+        today_il = datetime.now(IL_TZ).date()
+        yesterday_il = today_il - timedelta(days=1)
+
+        for tr in history:
+            rr = dict(tr)
+
+            # --- תאריך: היום / אתמול / בתאריך + תאריך ---
+            created_at_raw = rr.get("created_at")
+            created_dt = created_at_raw if isinstance(created_at_raw, datetime) else None
+
+            if created_dt:
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+
+                created_date_il = created_dt.astimezone(IL_TZ).date()
+
+                if created_date_il == today_il:
+                    date_parts = [yemot_prompt("TODAY")]
+                elif created_date_il == yesterday_il:
+                    date_parts = [yemot_prompt("YESTERDAY")]
+                else:
+                    date_str = created_date_il.strftime("%d/%m/%Y")
+                    date_parts = [yemot_prompt("DATE"), f"date-{date_str}"]
+            else:
+                date_parts = [yemot_prompt("DATE")]
+
+            # --- פעולה ---
+            t = rr.get("type")
+            action_key = HIST_TYPE_TO_PROMPT.get(t)
+
+            if action_key:
+                action_part: YemotMessage = yemot_prompt(action_key)
+            else:
+                # fallback – אם נפל סוג חדש שלא מופה
+                action_text = TYPE_HE.get(t, "פעולה")
+                action_part = clean(action_text)
+
+            # --- סכום ---
+            amt = amount_to_int(rr.get("amount"))
+            amt_parts: list[YemotMessage] = []
+            if amt is not None:
+                amt_parts = [
+                    yemot_prompt("SR_ON_SUM_OF"),
+                    str(amt),
+                    yemot_prompt("CUR_SHEKELS"),
+                ]
+
+            # --- מול (צד שני) ---
+            counterparty = rr.get("counterparty") or rr.get("to_name") or rr.get("from_name")
+            cp_parts: list[YemotMessage] = []
+            if counterparty:
+                cp_parts = [yemot_prompt("HIST_WITH"), clean(counterparty)]
+
+            # הרכבת שורה אחת
+            all_parts += [
+                *date_parts,
+                action_part,
+                *amt_parts,
+                *cp_parts,
+            ]
 
         if has_more:
             return yemot_menu(
-                f"{message_text}. לשמיעת פעולות נוספות הקישו 1. לחזרה הקישו 2.",
+                all_parts + [yemot_prompt("HIST_MORE_OR_BACK")],
                 "history_next_choice",
                 timeout=7,
                 options="1.2",
@@ -708,7 +778,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             )
 
         _reset()
-        return yemot_say(f"{message_text}, סוף פעולות", go_to_folder="./")
+        return yemot_say_parts(all_parts + [yemot_prompt("HIST_END")], go_to_folder="./")
 
     if action == "edit_profile":
         user_id, err = require_auth(request)

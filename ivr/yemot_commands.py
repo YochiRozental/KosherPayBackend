@@ -104,6 +104,13 @@ PROMPTS = {
     "HIST_EMPTY": "941",
     "HIST_MORE_OR_BACK": "703",
     "HIST_END": "704",
+    "HIST_ACT_PAYMENT_REQUEST": "710",  # "בקשת תשלום"
+    "HIST_ACT_PAYMENT_APPROVED": "711",  # "אישור בקשת תשלום"
+    "HIST_ACT_PAYMENT_REJECTED": "712",  # "דחיית בקשת תשלום"
+    "HIST_ACT_TRANSFER": "713",  # "העברה"
+    "HIST_ACT_DEPOSIT": "714",  # "הפקדה"
+    "HIST_ACT_WITHDRAW": "715",  # "משיכה"
+    "HIST_WITH": "705",  # "מול"
 
     # Edit profile
     "EDIT_DONE": "960",
