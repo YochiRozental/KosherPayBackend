@@ -111,6 +111,8 @@ PROMPTS = {
     "HIST_ACT_DEPOSIT": "714",  # "הפקדה"
     "HIST_ACT_WITHDRAW": "715",  # "משיכה"
     "HIST_WITH": "705",  # "מול"
+    "HIST_PLAYBACK_FROM": "720",  # "השמעת פעולות מ"
+    "HIST_PLAYBACK_TO": "721",
 
     # Edit profile
     "EDIT_DONE": "960",
@@ -179,15 +181,16 @@ def yemot_read(
         timeout: int = 10,
         read_type: str = "Digits",
         confirm: bool = True,
+        playback: bool = True,
 ) -> str:
     confirm_value = "yes" if confirm else "no"
+    playback_value = "yes" if playback else "no"
 
     first_part = yemot_first_part(text, clean_text=True)
 
-    # NOTE: leaving your existing second_part format exactly as-is
     second_part = (
-        f"{param},,{max_len},{min_len},{timeout},{read_type}"
-        f",,,,,,,,,{confirm_value}"
+        f"{param},,{max_len},{min_len},{timeout},{read_type},{playback_value}"
+        f",,,,,,,,{confirm_value}"
     )
 
     return f"read={first_part}={second_part}"
