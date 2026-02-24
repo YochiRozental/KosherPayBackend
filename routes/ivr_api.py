@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from db.deps import get_db
 from domain.account_creation_services import open_account
@@ -590,116 +591,116 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 "history_range_end_iso",
             )
 
+        history_choice = _get_param(request, "history_choice") or session_get(request, "history_choice")
+        history_next_choice = _get_param(request, "history_next_choice") or session_get(request,
+                                                                                        "history_next_choice")
+
+        if history_next_choice == "2":
+            _reset()
+            return "go_to_folder=./"
+
         try:
-            history_choice = _get_param(request, "history_choice") or session_get(request, "history_choice")
-            history_next_choice = _get_param(request, "history_next_choice") or session_get(request,
-                                                                                            "history_next_choice")
+            offset = int(session_get(request, "history_offset") or "0")
+        except ValueError:
+            offset = 0
 
-            if history_next_choice == "2":
-                _reset()
-                return "go_to_folder=./"
+        if history_next_choice == "1":
+            offset += page
+            session_set(request, "history_offset", str(offset))
+            session_delete(request, "history_next_choice")
 
-            try:
-                offset = int(session_get(request, "history_offset") or "0")
-            except ValueError:
-                offset = 0
+        if not history_choice:
+            _reset()
+            return yemot_menu(
+                yemot_prompt("HIST_RANGE_MENU"),
+                "history_choice",
+                timeout=7,
+                options="1.2.3.4",
+                confirm=False,
+            )
 
-            if history_next_choice == "1":
-                offset += page
-                session_set(request, "history_offset", str(offset))
-                session_delete(request, "history_next_choice")
+        session_set(request, "history_choice", history_choice)
 
-            if not history_choice:
-                _reset()
-                return yemot_menu(
-                    yemot_prompt("HIST_RANGE_MENU"),
-                    "history_choice",
-                    timeout=7,
-                    options="1.2.3.4",
-                    confirm=False,
-                )
+        start_iso = session_get(request, "history_range_start_iso")
+        end_iso = session_get(request, "history_range_end_iso")
 
-            session_set(request, "history_choice", history_choice)
+        if not start_iso or not end_iso:
+            session_set(request, "history_offset", "0")
+            offset = 0
 
-            start_iso = session_get(request, "history_range_start_iso")
-            end_iso = session_get(request, "history_range_end_iso")
+            if history_choice == "4":
+                start_str = _get_param(request, "history_start_date") or session_get(request, "history_start_date")
+                end_str = _get_param(request, "history_end_date") or session_get(request, "history_end_date")
 
-            if not start_iso or not end_iso:
-                session_set(request, "history_offset", "0")
-                offset = 0
+                if not start_str:
+                    resp = yemot_read(
+                        yemot_prompt("HIST_ENTER_START"),
+                        "history_start_date",
+                        8, 8,
+                        read_type="NO",
+                        confirm=False,
+                        playback=False,
+                    )
+                    logger.info("HISTORY start_date read response: %s", resp)
+                    return resp
 
-                if history_choice == "4":
-                    start_str = _get_param(request, "history_start_date") or session_get(request, "history_start_date")
-                    end_str = _get_param(request, "history_end_date") or session_get(request, "history_end_date")
+                if not end_str:
+                    resp = yemot_read(
+                        yemot_prompt("HIST_ENTER_END"),
+                        "history_end_date",
+                        8, 8,
+                        read_type="NO",
+                        confirm=False,
+                        playback=False,
+                    )
+                    logger.info("HISTORY end_date read response: %s", resp)
+                    return resp
 
-                    if not start_str:
-                        resp = yemot_read(
-                            yemot_prompt("HIST_ENTER_START"),
-                            "history_start_date",
-                            8, 8,
-                            read_type="NO",
-                            confirm=False,
-                            playback=False,
-                        )
-                        logger.info("HISTORY start_date read response: %s", resp)
-                        return resp
+                try:
+                    start_dt = datetime.strptime(start_str, "%d%m%Y").replace(
+                        hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
+                    )
+                    end_dt = datetime.strptime(end_str, "%d%m%Y").replace(
+                        hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    session_delete(request, "history_start_date", "history_end_date")
+                    return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
 
-                    if not end_str:
-                        resp = yemot_read(
-                            yemot_prompt("HIST_ENTER_END"),
-                            "history_end_date",
-                            8, 8,
-                            read_type="NO",
-                            confirm=False,
-                            playback=False,
-                        )
-                        logger.info("HISTORY end_date read response: %s", resp)
-                        return resp
+                if end_dt < start_dt:
+                    session_delete(request, "history_start_date", "history_end_date")
+                    return yemot_say(yemot_prompt("HIST_END_BEFORE_START"), go_to_folder="./")
 
-                    try:
-                        start_dt = datetime.strptime(start_str, "%d%m%Y").replace(
-                            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc
-                        )
-                        end_dt = datetime.strptime(end_str, "%d%m%Y").replace(
-                            hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
-                        )
-                    except ValueError:
-                        session_delete(request, "history_start_date", "history_end_date")
-                        return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
-
-                    if end_dt < start_dt:
-                        session_delete(request, "history_start_date", "history_end_date")
-                        return yemot_say(yemot_prompt("HIST_END_BEFORE_START"), go_to_folder="./")
-
+            else:
+                now = datetime.now(timezone.utc)
+                if history_choice == "1":
+                    start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    end_dt = now
+                elif history_choice == "2":
+                    days_from_sunday = (now.weekday() + 1) % 7
+                    start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+                        days=days_from_sunday)
+                    end_dt = now
+                elif history_choice == "3":
+                    start_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                    end_dt = now
                 else:
-                    now = datetime.now(timezone.utc)
-                    if history_choice == "1":
-                        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                        end_dt = now
-                    elif history_choice == "2":
-                        days_from_sunday = (now.weekday() + 1) % 7
-                        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
-                            days=days_from_sunday)
-                        end_dt = now
-                    elif history_choice == "3":
-                        start_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                        end_dt = now
-                    else:
-                        session_delete(request, "history_choice")
-                        return yemot_error("ERR_INVALID_CHOICE", go_to_folder="./")
+                    session_delete(request, "history_choice")
+                    return yemot_error("ERR_INVALID_CHOICE", go_to_folder="./")
 
-                session_set(request, "history_range_start_iso", start_dt.isoformat())
-                session_set(request, "history_range_end_iso", end_dt.isoformat())
-                start_iso = start_dt.isoformat()
-                end_iso = end_dt.isoformat()
+            session_set(request, "history_range_start_iso", start_dt.isoformat())
+            session_set(request, "history_range_end_iso", end_dt.isoformat())
+            start_iso = start_dt.isoformat()
+            end_iso = end_dt.isoformat()
 
-            try:
-                start_dt = datetime.fromisoformat(start_iso)
-                end_dt = datetime.fromisoformat(end_iso)
-            except (TypeError, ValueError):
-                _reset()
-                return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
+        try:
+            start_dt = datetime.fromisoformat(start_iso)
+            end_dt = datetime.fromisoformat(end_iso)
+        except (TypeError, ValueError):
+            _reset()
+            return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
 
+        try:
             result = get_transaction_history(
                 conn,
                 user_id=user_id,
@@ -708,94 +709,96 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 limit=page + 1,
                 offset=offset,
             )
-            if not result.get("success"):
-                session_delete(request, "history_next_choice")
-                return yemot_error("HIST_FETCH_ERROR", go_to_folder="./")
 
-            history = result.get("history") or []
-            if not history:
-                _reset()
-                return yemot_say(yemot_prompt("HIST_EMPTY"), go_to_folder="./")
+        except SQLAlchemyError:
+            logger.exception("get_transaction_history failed")
+            session_delete(request, "history_next_choice")
+            return yemot_error("HIST_FETCH_ERROR", go_to_folder="./")
 
-            has_more = len(history) > page
-            history = history[:page]
+        if not result.get("success"):
+            session_delete(request, "history_next_choice")
+            return yemot_error("HIST_FETCH_ERROR", go_to_folder="./")
 
-            all_parts: list[YemotMessage] = []
+        history = result.get("history") or []
+        if not history:
+            _reset()
+            return yemot_say(yemot_prompt("HIST_EMPTY"), go_to_folder="./")
 
-            today_il = datetime.now(IL_TZ).date()
-            yesterday_il = today_il - timedelta(days=1)
+        has_more = len(history) > page
+        history = history[:page]
 
-            for tr in history:
-                rr = dict(tr)
+        all_parts: list[YemotMessage] = []
 
-                # --- תאריך: היום / אתמול / בתאריך + תאריך ---
-                created_at_raw = rr.get("created_at")
-                created_dt = created_at_raw if isinstance(created_at_raw, datetime) else None
+        today_il = datetime.now(IL_TZ).date()
+        yesterday_il = today_il - timedelta(days=1)
 
-                if created_dt:
-                    if created_dt.tzinfo is None:
-                        created_dt = created_dt.replace(tzinfo=timezone.utc)
+        for tr in history:
+            rr = dict(tr)
 
-                    created_date_il = created_dt.astimezone(IL_TZ).date()
+            # --- תאריך: היום / אתמול / בתאריך + תאריך ---
+            created_at_raw = rr.get("created_at")
+            created_dt = created_at_raw if isinstance(created_at_raw, datetime) else None
 
-                    if created_date_il == today_il:
-                        date_parts = [yemot_prompt("TODAY")]
-                    elif created_date_il == yesterday_il:
-                        date_parts = [yemot_prompt("YESTERDAY")]
-                    else:
-                        date_str = created_date_il.strftime("%d/%m/%Y")
-                        date_parts = [yemot_prompt("DATE"), f"date-{date_str}"]
+            if created_dt:
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+
+                created_date_il = created_dt.astimezone(IL_TZ).date()
+
+                if created_date_il == today_il:
+                    date_parts = [yemot_prompt("TODAY")]
+                elif created_date_il == yesterday_il:
+                    date_parts = [yemot_prompt("YESTERDAY")]
                 else:
-                    date_parts = [yemot_prompt("DATE")]
+                    date_str = created_date_il.strftime("%d/%m/%Y")
+                    date_parts = [yemot_prompt("DATE"), f"date-{date_str}"]
+            else:
+                date_parts = [yemot_prompt("DATE")]
 
-                # --- פעולה ---
-                t = rr.get("type")
-                action_key = HIST_TYPE_TO_PROMPT.get(t)
+            # --- פעולה ---
+            t = rr.get("type")
+            action_key = HIST_TYPE_TO_PROMPT.get(t)
 
-                if action_key:
-                    action_part: YemotMessage = yemot_prompt(action_key)
-                else:
-                    action_text = TYPE_HE.get(t, "פעולה")
-                    action_part = clean(action_text)
+            if action_key:
+                action_part: YemotMessage = yemot_prompt(action_key)
+            else:
+                action_text = TYPE_HE.get(t, "פעולה")
+                action_part = clean(action_text)
 
-                # --- סכום ---
-                amt = amount_to_int(rr.get("amount"))
-                amt_parts: list[YemotMessage] = []
-                if amt is not None:
-                    amt_parts = [
-                        yemot_prompt("SR_ON_SUM_OF"),
-                        str(amt),
-                        yemot_prompt("CUR_SHEKELS"),
-                    ]
-
-                # --- מול (צד שני) ---
-                counterparty = rr.get("counterparty") or rr.get("to_name") or rr.get("from_name")
-                cp_parts: list[YemotMessage] = []
-                if counterparty:
-                    cp_parts = [yemot_prompt("HIST_WITH"), clean(counterparty)]
-
-                all_parts += [
-                    *date_parts,
-                    action_part,
-                    *amt_parts,
-                    *cp_parts,
+            # --- סכום ---
+            amt = amount_to_int(rr.get("amount"))
+            amt_parts: list[YemotMessage] = []
+            if amt is not None:
+                amt_parts = [
+                    yemot_prompt("SR_ON_SUM_OF"),
+                    str(amt),
+                    yemot_prompt("CUR_SHEKELS"),
                 ]
 
-            if has_more:
-                return yemot_menu(
-                    all_parts + [yemot_prompt("HIST_MORE_OR_BACK")],
-                    "history_next_choice",
-                    timeout=7,
-                    options="1.2",
-                    confirm=False,
-                )
+            # --- מול (צד שני) ---
+            counterparty = rr.get("counterparty") or rr.get("to_name") or rr.get("from_name")
+            cp_parts: list[YemotMessage] = []
+            if counterparty:
+                cp_parts = [yemot_prompt("HIST_WITH"), clean(counterparty)]
 
-            _reset()
-            return yemot_say_parts(all_parts + [yemot_prompt("HIST_END")], go_to_folder="./")
-        except Exception:
-            logger.exception("history flow failed")
-            _reset()
-            return yemot_error("ERR_GENERIC", go_to_folder="./")
+            all_parts += [
+                *date_parts,
+                action_part,
+                *amt_parts,
+                *cp_parts,
+            ]
+
+        if has_more:
+            return yemot_menu(
+                all_parts + [yemot_prompt("HIST_MORE_OR_BACK")],
+                "history_next_choice",
+                timeout=7,
+                options="1.2",
+                confirm=False,
+            )
+
+        _reset()
+        return yemot_say_parts(all_parts + [yemot_prompt("HIST_END")], go_to_folder="./")
 
     if action == "edit_profile":
         user_id, err = require_auth(request)
