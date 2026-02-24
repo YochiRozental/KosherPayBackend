@@ -125,6 +125,14 @@ PROMPTS = {
     "EDIT_FIELD_IS": "802",
     "EDIT_CURRENT_VALUE_IS": "803",
     "EDIT_MENU": "804",
+    "LBL_NAME": "810",
+    "LBL_PHONE": "811",
+    "LBL_SECRET_CODE": "812",
+    "LBL_BANK_NUMBER": "813",
+    "LBL_BRANCH_NUMBER": "814",
+    "LBL_ACCOUNT_NUMBER": "815",
+    "LBL_ACCOUNT_HOLDER": "816",
+    "VAL_EMPTY": "899",
 }
 
 
@@ -174,7 +182,7 @@ def yemot_first_part(message: YemotMessage, *, clean_text: bool = True) -> str:
 # =========================
 
 def yemot_read(
-        text: YemotMessage,
+        text: Union[YemotMessage, list[YemotMessage]],
         param: str,
         min_len: int,
         max_len: int,
@@ -186,13 +194,15 @@ def yemot_read(
     confirm_value = "yes" if confirm else "no"
     playback_value = "yes" if playback else "no"
 
-    first_part = yemot_first_part(text, clean_text=True)
+    if isinstance(text, list):
+        first_part = yemot_render_parts(text, clean_text=True)
+    else:
+        first_part = yemot_first_part(text, clean_text=True)
 
     second_part = (
         f"{param},,{max_len},{min_len},{timeout},{read_type},{playback_value}"
         f",,,,,,,,{confirm_value}"
     )
-
     return f"read={first_part}={second_part}"
 
 

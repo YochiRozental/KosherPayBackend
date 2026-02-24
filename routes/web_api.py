@@ -22,7 +22,7 @@ from domain.wallet_services import get_balance
 from repositories.users_repo import (
     get_user_id_by_phone,
 )
-from routes.utils import ensure_success
+from ivr.utils import ensure_success
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
     PaymentRequestRequest,

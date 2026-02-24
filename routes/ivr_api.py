@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
@@ -27,8 +26,9 @@ from domain.users_services import (
     get_me, get_user_id_by_phone_service
 )
 from domain.wallet_services import get_balance
-from ivr.constants import EDIT_FIELDS, TYPE_HE
-from ivr.formatters import present_value, clean, amount_to_int
+from ivr.constants import EDIT_FIELDS, TYPE_HE, IL_TZ, SR_STATUS_KEY_MAP, HIST_TYPE_TO_PROMPT
+from ivr.formatters import clean, amount_to_int
+from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
     YemotMessage
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
@@ -36,49 +36,13 @@ from ivr.yemot_session import init_yemot_session, session_set, session_get, sess
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
 
-IL_TZ = ZoneInfo("Asia/Jerusalem")
-
-SR_STATUS_KEY_MAP = {
-    None: "SR_STATUS_PENDING",
-    "": "SR_STATUS_PENDING",
-    "pending": "SR_STATUS_PENDING",
-    "approved": "SR_STATUS_APPROVED",
-    "rejected": "SR_STATUS_REJECTED",
-}
-
-HIST_TYPE_TO_PROMPT = {
-    "payment_request": "HIST_ACT_PAYMENT_REQUEST",
-    "payment_request_approved": "HIST_ACT_PAYMENT_APPROVED",
-    "payment_request_rejected": "HIST_ACT_PAYMENT_REJECTED",
-    "transfer": "HIST_ACT_TRANSFER",
-    "deposit": "HIST_ACT_DEPOSIT",
-    "withdraw": "HIST_ACT_WITHDRAW",
-}
-
-
-def _get_param(request: Request, key: str) -> str:
-    return (request.query_params.get(key) or "").strip()
-
-
-def require_auth(request):
-    user_id = session_get(request, "user_id")
-    if not user_id:
-        return None, "id_list_message=t-יש להתחבר תחילה&go_to_folder=/"
-    return user_id, None
-
-
-def date_for_yemot(dt: datetime) -> str:
-    # משמיע תאריך בפורמט שימות יודע: date-dd/mm/yyyy
-    d = dt.astimezone(IL_TZ).date()
-    return f"date-{d.strftime('%d/%m/%Y')}"
-
 
 @router.get("/api", response_class=PlainTextResponse)
 def ivr_api(request: Request, conn=Depends(get_db)):
     init_yemot_session(request)
 
-    action = _get_param(request, "action")
-    phone_number = _get_param(request, "ApiPhone") or _get_param(request, "phone_number")
+    action = get_param(request, "action")
+    phone_number = get_param(request, "ApiPhone") or get_param(request, "phone_number")
 
     if not action:
         return "API is working no action"
@@ -95,7 +59,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if not result.get("exists"):
             return "go_to_folder=/3"
 
-        secret_code = _get_param(request, "secret_code")
+        secret_code = get_param(request, "secret_code")
         if not secret_code:
             return yemot_read(
                 yemot_prompt("AUTH_ENTER_SECRET"),
@@ -122,12 +86,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if not phone_number:
             return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
-        secret_code = _get_param(request, "secret_code")
-        bank_number = _get_param(request, "bank_number")
-        branch_number = _get_param(request, "branch_number")
-        account_number = _get_param(request, "account_number")
+        secret_code = get_param(request, "secret_code")
+        bank_number = get_param(request, "bank_number")
+        branch_number = get_param(request, "branch_number")
+        account_number = get_param(request, "account_number")
 
-        name = _get_param(request, "name")
+        name = get_param(request, "name")
         if not name:
             last4 = phone_number[-4:] if len(phone_number) >= 4 else phone_number
             name = f"user_{last4}"
@@ -226,8 +190,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if err:
             return err
 
-        to_phone = _get_param(request, "to_phone")
-        amount_str = _get_param(request, "amount_transfer")
+        to_phone = get_param(request, "to_phone")
+        amount_str = get_param(request, "amount_transfer")
 
         if not to_phone:
             return yemot_read(
@@ -274,8 +238,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if err:
             return err
 
-        pay_req_phone = _get_param(request, "pay_req_phone")
-        pay_req_amount_str = _get_param(request, "pay_req_amount")
+        pay_req_phone = get_param(request, "pay_req_phone")
+        pay_req_amount_str = get_param(request, "pay_req_amount")
 
         if not pay_req_phone:
             return yemot_read(
@@ -322,7 +286,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if err:
             return err
 
-        amount_str = _get_param(request, "amount_d") or _get_param(request, "amount_deposit")
+        amount_str = get_param(request, "amount_d") or get_param(request, "amount_deposit")
 
         if not amount_str:
             return yemot_read(
@@ -354,7 +318,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if err:
             return err
 
-        amount_str = _get_param(request, "amount_w") or _get_param(request, "amount_withdraw")
+        amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
 
         if not amount_str:
             return yemot_read(
@@ -413,7 +377,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         session_set(request, "req_i", str(i))
         session_set(request, "req_id", req_id)
 
-        choice = _get_param(request, "choice")
+        choice = get_param(request, "choice")
 
         last_req = session_get(request, "last_handled_req_id")
         last_choice = session_get(request, "last_handled_choice")
@@ -473,7 +437,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             return err
 
         page = 5
-        sent_next_choice_param = _get_param(request, "sent_next_choice")
+        sent_next_choice_param = get_param(request, "sent_next_choice")
         sent_next_choice = sent_next_choice_param or session_get(request, "sent_next_choice")
 
         if sent_next_choice_param:
@@ -597,9 +561,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 "history_range_end_iso",
             )
 
-        history_choice = _get_param(request, "history_choice") or session_get(request, "history_choice")
-        history_next_choice = _get_param(request, "history_next_choice") or session_get(request,
-                                                                                        "history_next_choice")
+        history_choice = get_param(request, "history_choice") or session_get(request, "history_choice")
+        history_next_choice = get_param(request, "history_next_choice") or session_get(request,
+                                                                                       "history_next_choice")
 
         if history_next_choice == "2":
             _reset()
@@ -635,8 +599,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             offset = 0
 
             if history_choice == "4":
-                start_str = _get_param(request, "history_start_date") or session_get(request, "history_start_date")
-                end_str = _get_param(request, "history_end_date") or session_get(request, "history_end_date")
+                start_str = get_param(request, "history_start_date") or session_get(request, "history_start_date")
+                end_str = get_param(request, "history_end_date") or session_get(request, "history_end_date")
 
                 if not start_str:
                     resp = yemot_read(
@@ -835,18 +799,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             )
             return yemot_say(yemot_prompt("EDIT_DONE"), go_to_folder="../")
 
-        field_key, label, var_name, mn, mx, read_type = EDIT_FIELDS[idx]
+        field_key, label_key, var_name, mn, mx, read_type = EDIT_FIELDS[idx]
+        label = yemot_prompt(label_key)
 
         me = get_me(conn, user_id=user_id)
         if not me or not me.get("success"):
             return yemot_say(yemot_prompt("EDIT_FETCH_USER_ERROR"), go_to_folder="../")
 
         user = me.get("user") or {}
-        current_value = present_value(field_key, user.get(field_key))
+        raw_val = get_user_value(user, field_key)
 
-        new_val = _get_param(request, var_name)
+        new_val = get_param(request, var_name)
         if new_val:
-            kwargs = {field_key: new_val}
+            kwargs = to_update_kwargs(field_key, new_val, user)
             out = update_me(conn, user_id=user_id, **kwargs)
 
             session_delete(request, var_name)
@@ -857,7 +822,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_set(request, "edit_idx", str(idx + 1))
             return yemot_say(yemot_prompt("EDIT_UPDATED"), go_to_folder="./")
 
-        choice = _get_param(request, "edit_choice")
+        choice = get_param(request, "edit_choice")
 
         if choice == "2":
             session_set(request, "edit_idx", str(idx + 1))
@@ -876,13 +841,21 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if choice == "1":
             session_delete(request, "edit_choice")
-            prompt = f"להזנת {label} חדש, הקישו כעת"
-            return yemot_read(prompt, var_name, mn, mx, read_type=read_type, confirm=True)
+            return yemot_read(
+                [yemot_prompt("EDIT_ENTER_PREFIX"), label, yemot_prompt("EDIT_ENTER_SUFFIX")],
+                var_name, mn, mx, read_type=read_type, confirm=True
+            )
 
-        text = (
-            f"הפרט הבא הוא {label}. הערך הנוכחי הוא {current_value}. "
-            f"לעדכון הקישו 1. לפרט הבא הקישו 2. ליציאה הקישו 3."
-        )
-        return yemot_menu(text, "edit_choice", timeout=7, options="1.2.3", confirm=False)
+        print("USER KEYS:", sorted(user.keys()))
+        print("USER RAW:", user)
+
+        parts = [
+            yemot_prompt("EDIT_FIELD_IS"),
+            label,
+            yemot_prompt("EDIT_CURRENT_VALUE_IS"),
+            current_value_msg(field_key, raw_val),
+            yemot_prompt("EDIT_MENU"),
+        ]
+        return yemot_menu(parts, "edit_choice", timeout=7, options="1.2.3", confirm=False)
 
     return "id_list_message=t-פעולה לא נתמכת&go_to_folder=../"
