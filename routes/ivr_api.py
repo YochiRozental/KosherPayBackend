@@ -67,6 +67,12 @@ def require_auth(request):
     return user_id, None
 
 
+def date_for_yemot(dt: datetime) -> str:
+    # משמיע תאריך בפורמט שימות יודע: date-dd/mm/yyyy
+    d = dt.astimezone(IL_TZ).date()
+    return f"date-{d.strftime('%d/%m/%Y')}"
+
+
 @router.get("/api", response_class=PlainTextResponse)
 def ivr_api(request: Request, conn=Depends(get_db)):
     init_yemot_session(request)
@@ -696,6 +702,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         try:
             start_dt = datetime.fromisoformat(start_iso)
             end_dt = datetime.fromisoformat(end_iso)
+
         except (TypeError, ValueError):
             _reset()
             return yemot_say(yemot_prompt("HIST_DATE_INVALID"), go_to_folder="./")
@@ -728,6 +735,14 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         history = history[:page]
 
         all_parts: list[YemotMessage] = []
+
+        if offset == 0:
+            all_parts += [
+                yemot_prompt("HIST_PLAYBACK_FROM"),
+                date_for_yemot(start_dt),
+                yemot_prompt("HIST_PLAYBACK_TO"),
+                date_for_yemot(end_dt),
+            ]
 
         today_il = datetime.now(IL_TZ).date()
         yesterday_il = today_il - timedelta(days=1)
