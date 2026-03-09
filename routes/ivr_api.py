@@ -36,6 +36,15 @@ from ivr.yemot_session import init_yemot_session, session_set, session_get, sess
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
 
+BACK_KEY = "*"
+
+
+def ivr_back_if_star(request, *session_keys_to_clear):
+    if get_param(request, "Digits") == BACK_KEY:
+        session_delete(request, *session_keys_to_clear)
+        return "go_to_folder=../"
+    return None
+
 
 @router.get("/api", response_class=PlainTextResponse)
 def ivr_api(request: Request, conn=Depends(get_db)):
@@ -386,6 +395,11 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "choice", "req_id")
             return "go_to_folder=./"
 
+        if choice == "*":
+            session_delete(request, "choice", "req_i", "req_id", "last_handled_req_id", "last_handled_choice")
+            print("*******************************************************************************************************************")
+            return "go_to_folder=/2"
+
         if choice == "1":
             approve_payment_request(conn, user_id=user_id, request_id=req_id)
 
@@ -429,7 +443,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             yemot_prompt("RR_MENU"),
         ]
 
-        return yemot_menu(parts, "choice", timeout=7, options="1.2.3", confirm=False)
+        return yemot_menu(parts, "choice", timeout=7, options="1.2.3.*", confirm=False)
 
     if action == "sent_requests":
         user_id, err = require_auth(request)
@@ -451,6 +465,10 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if sent_next_choice == "1":
             offset += page
             session_set(request, "sent_req_offset", str(offset))
+
+        if sent_next_choice == "*":
+            session_delete(request, "sent_req_offset", "sent_next_choice")
+            return "go_to_folder=../"
 
         if sent_next_choice == "2":
             session_delete(request, "sent_req_offset", "sent_next_choice")
@@ -533,7 +551,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 all_parts + [yemot_prompt("SR_MORE_OR_BACK")],
                 "sent_next_choice",
                 timeout=7,
-                options="1.2",
+                options="1.2.*",
                 confirm=False,
             )
 
