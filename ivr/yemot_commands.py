@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Union, Literal
+from typing import Literal
+from typing import Union
 
 from ivr.formatters import clean
 
@@ -135,6 +135,8 @@ PROMPTS = {
     "VAL_EMPTY": "899",
 }
 
+BACK_VALUE = "BACK"
+
 
 def prompt_path(key: str) -> str:
     """
@@ -181,6 +183,7 @@ def yemot_first_part(message: YemotMessage, *, clean_text: bool = True) -> str:
 # Core commands
 # =========================
 
+
 def yemot_read(
         text: Union[YemotMessage, list[YemotMessage]],
         param: str,
@@ -190,6 +193,8 @@ def yemot_read(
         read_type: str = "Digits",
         confirm: bool = True,
         playback: bool = True,
+        read_none_ok: bool = False,
+        none_value: str = "None",
 ) -> str:
     confirm_value = "yes" if confirm else "no"
     playback_value = "yes" if playback else "no"
@@ -199,11 +204,45 @@ def yemot_read(
     else:
         first_part = yemot_first_part(text, clean_text=True)
 
-    second_part = (
-        f"{param},,{max_len},{min_len},{timeout},{read_type},{playback_value}"
-        f",,,,,,,,{confirm_value}"
-    )
+    fields = [""] * 15
+    fields[0] = param
+    fields[2] = str(max_len)
+    fields[3] = str(min_len)
+    fields[4] = str(timeout)
+    fields[5] = read_type
+    fields[6] = playback_value
+
+    if read_none_ok:
+        fields[11] = "Ok"
+        fields[12] = none_value
+
+    fields[14] = confirm_value
+
+    second_part = ",".join(fields)
     return f"read={first_part}={second_part}"
+
+
+def read_with_back(
+        prompt: YemotMessage | list[YemotMessage],
+        param: str,
+        min_len: int,
+        max_len: int,
+        *,
+        read_type: str = "Digits",
+        confirm: bool = True,
+        playback: bool = True,
+) -> str:
+    return yemot_read(
+        prompt,
+        param,
+        min_len,
+        max_len,
+        read_type=read_type,
+        confirm=confirm,
+        playback=playback,
+        read_none_ok=True,
+        none_value=BACK_VALUE,
+    )
 
 
 def yemot_menu(
@@ -222,6 +261,10 @@ def yemot_menu(
         first_part = yemot_first_part(text, clean_text=True)
 
     return f"read={first_part}={var},Digits,1,1,{timeout},No,AskNo,,,{options},,,,,,,,{confirm_value}"
+
+
+def is_back(value: str | None) -> bool:
+    return value == BACK_VALUE
 
 
 def yemot_say(message: YemotMessage, *, go_to_folder: str | None = None) -> str:
@@ -291,57 +334,3 @@ def yemot_prompt(key: str) -> YemotFile:
     שימושי ל-yemot_read / yemot_menu / yemot_say
     """
     return YemotFile(prompt_path(key))
-
-
-# =========================
-# Existing date utilities (unchanged)
-# =========================
-
-def parse_ddmmyyyy(s: str) -> datetime | None:
-    """
-    מקבל מחרוזת 8 ספרות: ddmmyyyy (למשל 08022026)
-    ומחזיר datetime ב-UTC בתחילת היום (timezone-aware).
-    """
-    s = (s or "").strip()
-    if len(s) != 8 or not s.isdigit():
-        return None
-    try:
-        dt = datetime.strptime(s, "%d%m%Y")
-        return dt.replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
-
-
-def get_history_range(choice: str, session: dict, now: datetime) -> tuple[datetime | None, datetime | None]:
-    """
-    now חייב להיות timezone-aware (UTC)
-    """
-    if choice == "1":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = now
-        return start, end
-
-    if choice == "2":
-        days_from_sunday = (now.weekday() + 1) % 7
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_from_sunday)
-        end = now
-        return start, end
-
-    if choice == "3":
-        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        end = now
-        return start, end
-
-    if choice == "__custom_range__":
-        start_iso = session.get("history_range_start_iso")
-        end_iso = session.get("history_range_end_iso")
-        if not start_iso or not end_iso:
-            return None, None
-        try:
-            start = datetime.fromisoformat(start_iso)
-            end = datetime.fromisoformat(end_iso)
-            return start, end
-        except ValueError:
-            return None, None
-
-    return None, None

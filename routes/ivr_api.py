@@ -28,22 +28,14 @@ from domain.users_services import (
 from domain.wallet_services import get_balance
 from ivr.constants import EDIT_FIELDS, TYPE_HE, IL_TZ, SR_STATUS_KEY_MAP, HIST_TYPE_TO_PROMPT
 from ivr.formatters import clean, amount_to_int
-from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg
+from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg, \
+    go_back, parse_amount
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
-    YemotMessage
+    YemotMessage, read_with_back, is_back
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
-
-BACK_KEY = "*"
-
-
-def ivr_back_if_star(request, *session_keys_to_clear):
-    if get_param(request, "Digits") == BACK_KEY:
-        session_delete(request, *session_keys_to_clear)
-        return "go_to_folder=../"
-    return None
 
 
 @router.get("/api", response_class=PlainTextResponse)
@@ -203,30 +195,33 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         amount_str = get_param(request, "amount_transfer")
 
         if not to_phone:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("TR_ENTER_TO_PHONE"),
                 "to_phone",
                 9,
                 10,
                 read_type="Digits",
-                confirm=True,
             )
 
+        if is_back(to_phone):
+            return go_back(request, "to_phone", "amount_transfer", target="../")
+
         if not amount_str:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("TR_ENTER_AMOUNT"),
                 "amount_transfer",
                 1,
                 8,
                 read_type="Number",
-                confirm=True,
             )
 
-        try:
-            amount = float(amount_str)
-        except ValueError:
+        if is_back(amount_str):
+            return go_back(request, "to_phone", "amount_transfer", target="./")
+
+        amount = parse_amount(amount_str)
+        if amount is None:
             session_delete(request, "amount_transfer")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
         to_user_id = get_user_id_by_phone_service(conn, to_phone)
         if not to_user_id:
@@ -251,30 +246,33 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         pay_req_amount_str = get_param(request, "pay_req_amount")
 
         if not pay_req_phone:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("PR_ENTER_PHONE"),
                 "pay_req_phone",
                 9,
                 10,
                 read_type="Digits",
-                confirm=True,
             )
 
+        if is_back(pay_req_phone):
+            return go_back(request, "pay_req_phone", "pay_req_amount", target="../")
+
         if not pay_req_amount_str:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("PR_ENTER_AMOUNT"),
                 "pay_req_amount",
                 1,
                 8,
                 read_type="Number",
-                confirm=True,
             )
 
-        try:
-            amount = float(pay_req_amount_str)
-        except ValueError:
+        if is_back(pay_req_amount_str):
+            return go_back(request, "pay_req_phone", "pay_req_amount", target="./")
+
+        amount = parse_amount(pay_req_amount_str)
+        if amount is None:
             session_delete(request, "pay_req_amount")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
         recipient_id = get_user_id_by_phone_service(conn, pay_req_phone)
         if not recipient_id:
@@ -298,20 +296,21 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         amount_str = get_param(request, "amount_d") or get_param(request, "amount_deposit")
 
         if not amount_str:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("DEP_ENTER_AMOUNT"),
                 "amount_d",
                 1,
                 8,
                 read_type="Number",
-                confirm=True,
             )
 
-        try:
-            amount = float(amount_str)
-        except ValueError:
+        if is_back(amount_str):
+            return go_back(request, "amount_d", "amount_deposit", target="../")
+
+        amount = parse_amount(amount_str)
+        if amount is None:
             session_delete(request, "amount_d", "amount_deposit")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
         result = deposit(conn, user_id=user_id, amount=amount)
 
@@ -330,20 +329,21 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
 
         if not amount_str:
-            return yemot_read(
+            return read_with_back(
                 yemot_prompt("WDR_ENTER_AMOUNT"),
                 "amount_w",
                 1,
                 8,
                 read_type="Number",
-                confirm=True,
             )
 
-        try:
-            amount = float(amount_str)
-        except ValueError:
+        if is_back(amount_str):
+            return go_back(request, "amount_w", "amount_withdraw", target="../")
+
+        amount = parse_amount(amount_str)
+        if amount is None:
             session_delete(request, "amount_w", "amount_withdraw")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="../")
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
         result = withdraw(conn, user_id=user_id, amount=amount)
 
@@ -397,7 +397,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         if choice == "*":
             session_delete(request, "choice", "req_i", "req_id", "last_handled_req_id", "last_handled_choice")
-            print("*******************************************************************************************************************")
             return "go_to_folder=/2"
 
         if choice == "1":
