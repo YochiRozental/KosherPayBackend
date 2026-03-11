@@ -31,7 +31,7 @@ from ivr.formatters import clean, amount_to_int
 from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg, \
     go_back, parse_amount
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
-    YemotMessage, read_with_back, is_back
+    YemotMessage, read_with_back, is_back, menu_with_back
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
@@ -395,9 +395,12 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "choice", "req_id")
             return "go_to_folder=./"
 
-        if choice == "*":
-            session_delete(request, "choice", "req_i", "req_id", "last_handled_req_id", "last_handled_choice")
-            return "go_to_folder=/2"
+        if is_back(choice):
+            return go_back(
+                request,
+                "choice", "req_i", "req_id", "last_handled_req_id", "last_handled_choice",
+                target="../",
+            )
 
         if choice == "1":
             approve_payment_request(conn, user_id=user_id, request_id=req_id)
@@ -442,7 +445,13 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             yemot_prompt("RR_MENU"),
         ]
 
-        return yemot_menu(parts, "choice", timeout=7, options="1.2.3.*", confirm=False)
+        return menu_with_back(
+            parts,
+            "choice",
+            timeout=7,
+            options="1.2.3",
+            confirm=False,
+        )
 
     if action == "sent_requests":
         user_id, err = require_auth(request)
@@ -465,13 +474,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             offset += page
             session_set(request, "sent_req_offset", str(offset))
 
-        if sent_next_choice == "*":
-            session_delete(request, "sent_req_offset", "sent_next_choice")
-            return "go_to_folder=../"
-
-        if sent_next_choice == "2":
-            session_delete(request, "sent_req_offset", "sent_next_choice")
-            return "go_to_folder=../"
+        if is_back(sent_next_choice) or sent_next_choice == "2":
+            return go_back(request, "sent_req_offset", "sent_next_choice", target="../")
 
         res = get_my_sent_payment_requests(conn, user_id=user_id)
         if not res.get("success"):
@@ -517,8 +521,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 except ValueError:
                     created_dt = None
 
-            date_parts: list[YemotMessage]
-
             if not created_dt:
                 date_parts = [yemot_prompt("DATE")]
             else:
@@ -546,16 +548,15 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             ]
 
         if has_more:
-            return yemot_menu(
+            return menu_with_back(
                 all_parts + [yemot_prompt("SR_MORE_OR_BACK")],
                 "sent_next_choice",
                 timeout=7,
-                options="1.2.*",
+                options="1.2",
                 confirm=False,
             )
 
         session_delete(request, "sent_req_offset", "sent_next_choice")
-
         return yemot_say_parts(all_parts + [yemot_prompt("SR_END")], go_to_folder="../")
 
     if action == "history":

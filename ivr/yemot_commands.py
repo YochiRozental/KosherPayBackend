@@ -252,6 +252,8 @@ def yemot_menu(
         timeout: int = 7,
         options: str = "1.2.3",
         confirm: bool = False,
+        read_none_ok: bool = False,
+        none_value: str = "None",
 ) -> str:
     confirm_value = "yes" if confirm else "no"
 
@@ -260,7 +262,43 @@ def yemot_menu(
     else:
         first_part = yemot_first_part(text, clean_text=True)
 
-    return f"read={first_part}={var},Digits,1,1,{timeout},No,AskNo,,,{options},,,,,,,,{confirm_value}"
+    fields = [""] * 15
+    fields[0] = var
+    fields[1] = "Digits"
+    fields[2] = "1"
+    fields[3] = "1"
+    fields[4] = str(timeout)
+    fields[5] = "No"
+    fields[6] = "AskNo"
+    fields[9] = options
+
+    if read_none_ok:
+        fields[11] = "Ok"
+        fields[12] = none_value
+
+    fields[14] = confirm_value
+
+    second_part = ",".join(fields)
+    return f"read={first_part}={second_part}"
+
+
+def menu_with_back(
+        text: YemotMessage | list[YemotMessage],
+        var: str,
+        *,
+        timeout: int = 7,
+        options: str = "1.2.3",
+        confirm: bool = False,
+) -> str:
+    return yemot_menu(
+        text,
+        var,
+        timeout=timeout,
+        options=options,
+        confirm=confirm,
+        read_none_ok=True,
+        none_value=BACK_VALUE,
+    )
 
 
 def is_back(value: str | None) -> bool:
