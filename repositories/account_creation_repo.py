@@ -19,18 +19,14 @@ def create_user(conn, *, name: str) -> UUID:
             (name,),
         )
         row = cur.fetchone()
+        print("DEBUG ROW:", row, type(row))
+        print("DEBUG KEYS:", getattr(row, "keys", lambda: [])())
         if not row:
             raise RuntimeError("Failed to create user")
-        return row[0]
+        return row["id"]
 
 
-def create_user_phone(
-        conn,
-        *,
-        user_id: UUID,
-        phone_number: str,
-        is_primary: bool = True,
-) -> UUID:
+def create_user_phone(conn, *, user_id: UUID, phone_number: str, is_primary: bool = True) -> UUID:
     phone_number = (phone_number or "").strip()
     if not phone_number:
         raise ValueError("phone_number is required")
@@ -46,7 +42,7 @@ def create_user_phone(
         row = cur.fetchone()
         if not row:
             raise RuntimeError("Failed to create user phone")
-        return row[0]
+        return row["id"]
 
 
 def create_user_auth(
@@ -88,13 +84,13 @@ def create_wallet(
 
 
 def create_bank_account(
-        conn,
-        *,
-        user_id: UUID,
-        bank_number: str,
-        branch_number: str,
-        account_number: str,
-        account_holder: str,
+    conn,
+    *,
+    user_id: UUID,
+    bank_number: str,
+    branch_number: str,
+    account_number: str,
+    account_holder: str,
 ) -> UUID:
     bank_number = (bank_number or "").strip()
     branch_number = (branch_number or "").strip()
@@ -107,19 +103,18 @@ def create_bank_account(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO bank_accounts (user_id,
-                                       bank_number,
-                                       branch_number,
-                                       account_number,
-                                       account_holder)
-            VALUES (%s, %s, %s, %s, %s) RETURNING id
+            INSERT INTO bank_accounts (
+                user_id, bank_number, branch_number, account_number, account_holder
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (user_id, bank_number, branch_number, account_number, account_holder),
         )
         row = cur.fetchone()
         if not row:
             raise RuntimeError("Failed to create bank account")
-        return row[0]
+        return row["id"]
 
 
 def is_phone_unique_violation(err: Exception) -> bool:

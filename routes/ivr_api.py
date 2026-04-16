@@ -85,53 +85,73 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
     if action == "open_account":
         if not phone_number:
-            return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
+            resp = yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
+            print("RESP NO PHONE:", repr(resp))
+            return resp
 
-        secret_code = get_param(request, "secret_code")
-        bank_number = get_param(request, "bank_number")
-        branch_number = get_param(request, "branch_number")
-        account_number = get_param(request, "account_number")
+        secret_code = get_param(request, "secret_code") or (session_get(request, "secret_code") or "")
+        bank_number = get_param(request, "bank_number") or (session_get(request, "bank_number") or "")
+        branch_number = get_param(request, "branch_number") or (session_get(request, "branch_number") or "")
+        account_number = get_param(request, "account_number") or (session_get(request, "account_number") or "")
+        name = get_param(request, "name") or (session_get(request, "name") or "")
 
-        name = get_param(request, "name")
         if not name:
             last4 = phone_number[-4:] if len(phone_number) >= 4 else phone_number
             name = f"user_{last4}"
+            session_set(request, "name", name)
+
+        print("OPEN_ACCOUNT INPUTS:", {
+            "phone_number": phone_number,
+            "secret_code": secret_code,
+            "bank_number": bank_number,
+            "branch_number": branch_number,
+            "account_number": account_number,
+            "name": name,
+        })
 
         if not secret_code:
-            return yemot_read(
+            resp = yemot_read(
                 yemot_prompt("AUTH_ENTER_SECRET"),
                 "secret_code",
                 6, 6,
                 read_type="Digits",
                 confirm=True
             )
+            print("RESP SECRET:", repr(resp))
+            return resp
 
         if not bank_number:
-            return yemot_read(
+            resp = yemot_read(
                 yemot_prompt("REG_ENTER_BANK"),
                 "bank_number",
                 2, 2,
-                read_type="Digits",
+                read_type="Number",
                 confirm=True
             )
+            print("RESP BANK:", repr(resp))
+            return resp
 
         if not branch_number:
-            return yemot_read(
+            resp = yemot_read(
                 yemot_prompt("REG_ENTER_BRANCH"),
                 "branch_number",
                 3, 3,
-                read_type="Digits",
+                read_type="Number",
                 confirm=True
             )
+            print("RESP BRANCH:", repr(resp))
+            return resp
 
         if not account_number:
-            return yemot_read(
+            resp = yemot_read(
                 yemot_prompt("REG_ENTER_ACCOUNT"),
                 "account_number",
                 6, 6,
                 read_type="Digits",
                 confirm=True
             )
+            print("RESP ACCOUNT:", repr(resp))
+            return resp
 
         result = open_account(
             conn,
@@ -143,16 +163,30 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             account_number=account_number,
         )
 
+        print("OPEN_ACCOUNT RESULT:", repr(result))
+
         session_delete(request, "secret_code", "bank_number", "branch_number", "account_number", "name")
 
         if not result.get("success"):
+            logger.error("open_account failed | result=%r", result)
+
             if result.get("error_code") != "PHONE_ALREADY_EXISTS":
-                return yemot_error("ERR_SYSTEM", go_to_folder="../")
+                resp = yemot_error("ERR_SYSTEM", go_to_folder="../")
+                print("RESP ERR_SYSTEM:", repr(resp))
+                return resp
 
             msg = (result.get("message") or "מספר טלפון כבר רשום").replace("&", " ")
-            return yemot_say(msg, go_to_folder="/2")
+            resp = yemot_say(msg, go_to_folder="/")
+            print("RESP PHONE EXISTS:", repr(resp))
+            return resp
 
-        return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
+        session_set(request, "user_id", str(result["user_id"]))
+        session_set(request, "authenticated", "1")
+        session_set(request, "phone", phone_number)
+
+        resp = yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
+        print("RESP SUCCESS:", repr(resp))
+        return resp
 
     if action == "get_balance":
         user_id, err = require_auth(request)

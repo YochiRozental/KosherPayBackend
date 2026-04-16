@@ -37,29 +37,30 @@ def open_account(
         }
 
     try:
-        with conn:
-            user_id = create_user(conn, name=name)
+        user_id = create_user(conn, name=name)
 
-            user_phone_id = create_user_phone(
-                conn,
-                user_id=user_id,
-                phone_number=phone_number,
-                is_primary=True,
-            )
+        user_phone_id = create_user_phone(
+            conn,
+            user_id=user_id,
+            phone_number=phone_number,
+            is_primary=True,
+        )
 
-            secret_hash = hash_secret(secret_code)
-            create_user_auth(conn, user_phone_id=user_phone_id, secret_hash=secret_hash)
+        secret_hash = hash_secret(secret_code)
+        create_user_auth(conn, user_phone_id=user_phone_id, secret_hash=secret_hash)
 
-            create_wallet(conn, user_id=user_id, currency="ILS")
+        create_wallet(conn, user_id=user_id, currency="ILS")
 
-            bank_account_id = create_bank_account(
-                conn,
-                user_id=user_id,
-                bank_number=bank_number,
-                branch_number=branch_number,
-                account_number=account_number,
-                account_holder=name,
-            )
+        bank_account_id = create_bank_account(
+            conn,
+            user_id=user_id,
+            bank_number=bank_number,
+            branch_number=branch_number,
+            account_number=account_number,
+            account_holder=name,
+        )
+
+        conn.commit()
 
         return {
             "success": True,
@@ -69,6 +70,8 @@ def open_account(
         }
 
     except Exception as e:
+        conn.rollback()
+        print("OPEN_ACCOUNT EXCEPTION:", repr(e))
         if is_phone_unique_violation(e):
             return {
                 "success": False,
