@@ -29,6 +29,9 @@ _YEMOT_PREFIXES = ("f-", "t-", "s-", "date-", "dateH-", "z-", "m-", "n-", "a-", 
 AUDIO_ROOT = "/99"
 
 PROMPTS = {
+
+    "WELCOME_HELLO": "910",
+
     # System / errors
     "ERR_PHONE_NOT_FOUND": "900",
     "ERR_SYSTEM": "901",

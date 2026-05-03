@@ -17,6 +17,7 @@ from domain.payment_requests_services import (
     reject_payment_request,
     get_my_sent_payment_requests
 )
+from domain.recordings_services import get_user_name_recording
 from domain.transactions_services import (
     transfer, deposit, withdraw, get_transaction_history
 )
@@ -81,7 +82,39 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         session_set(request, "authenticated", "1")
         session_set(request, "phone", phone_number)
 
-        return "go_to_folder=/2"
+        session_set(request, "welcome_played", "0")
+        session_set(request, "user_name", auth["user"].get("name", ""))
+
+        return "go_to_folder=/1"
+
+    if action == "welcome":
+        user_id, err = require_auth(request)
+        if err:
+            return err
+
+        if session_get(request, "welcome_played") == "1":
+            return "go_to_folder=/2"
+
+        session_set(request, "welcome_played", "1")
+
+        parts: list[YemotMessage] = [
+            yemot_prompt("WELCOME_HELLO"),
+        ]
+
+        rec = get_user_name_recording(conn, user_id=user_id)
+
+        if rec.get("success") and rec.get("exists") and rec.get("file_path"):
+            parts.append(rec["file_path"])
+            return yemot_say_parts(parts, go_to_folder="/2")
+
+        me = get_me(conn, user_id=user_id)
+
+        if me.get("success"):
+            name = (me.get("user") or {}).get("name") or ""
+            if name:
+                parts.append(clean(name))
+
+        return yemot_say_parts(parts, go_to_folder="/2")
 
     if action == "open_account":
         if not phone_number:
