@@ -273,6 +273,11 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if is_back(to_phone):
             return go_back(request, "to_phone", "amount_transfer", target="../")
 
+        to_user_id = get_user_id_by_phone_service(conn, to_phone)
+        if not to_user_id:
+            session_delete(request, "to_phone", "amount_transfer")
+            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="./")
+
         if not amount_str:
             return read_with_back(
                 yemot_prompt("TR_ENTER_AMOUNT"),
@@ -289,11 +294,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if amount is None:
             session_delete(request, "amount_transfer")
             return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
-
-        to_user_id = get_user_id_by_phone_service(conn, to_phone)
-        if not to_user_id:
-            session_delete(request, "to_phone", "amount_transfer")
-            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")
 
         result = transfer(conn, from_user_id=from_user_id, to_user_id=to_user_id, amount=amount)
 
@@ -324,6 +324,11 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if is_back(pay_req_phone):
             return go_back(request, "pay_req_phone", "pay_req_amount", target="../")
 
+        recipient_id = get_user_id_by_phone_service(conn, pay_req_phone)
+        if not recipient_id:
+            session_delete(request, "pay_req_phone", "pay_req_amount")
+            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="./")
+
         if not pay_req_amount_str:
             return read_with_back(
                 yemot_prompt("PR_ENTER_AMOUNT"),
@@ -340,11 +345,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if amount is None:
             session_delete(request, "pay_req_amount")
             return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
-
-        recipient_id = get_user_id_by_phone_service(conn, pay_req_phone)
-        if not recipient_id:
-            session_delete(request, "pay_req_phone", "pay_req_amount")
-            return yemot_error("TR_USER_NOT_FOUND", go_to_folder="../")
 
         result = request_payment(conn, requester_id=requester_id, recipient_id=recipient_id, amount=amount)
 
