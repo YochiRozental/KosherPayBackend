@@ -17,7 +17,6 @@ from domain.payment_requests_services import (
     reject_payment_request,
     get_my_sent_payment_requests
 )
-from domain.recordings_services import get_user_name_recording
 from domain.transactions_services import (
     transfer, deposit, withdraw, get_transaction_history
 )
@@ -35,6 +34,8 @@ from ivr.utils import repeatable_read
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
     YemotMessage, is_back, menu_with_back
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
+from domain.recordings_services import get_user_name_recording, save_user_name_recording
+from ivr.yemot_commands import yemot_record
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
@@ -128,20 +129,41 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         branch_number = get_param(request, "branch_number") or (session_get(request, "branch_number") or "")
         account_number = get_param(request, "account_number") or (session_get(request, "account_number") or "")
         name = get_param(request, "name") or (session_get(request, "name") or "")
+        name_choice = get_param(request, "name_choice") or (session_get(request, "name_choice") or "")
+
+        if not name_choice:
+            return yemot_menu(
+                yemot_prompt("REG_RECORD_NAME_CHOICE"),
+                "name_choice",
+                timeout=8,
+                options="1.2",
+                confirm=False,
+            )
+
+        session_set(request, "name_choice", name_choice)
+
+        if name_choice == "2" and not name:
+            return yemot_read(
+                yemot_prompt("REG_ENTER_NAME"),
+                "name",
+                1, 30,
+                read_type="HebrewKeyboard",
+                confirm=True,
+            )
 
         if not name:
             last4 = phone_number[-4:] if len(phone_number) >= 4 else phone_number
             name = f"user_{last4}"
             session_set(request, "name", name)
 
-        print("OPEN_ACCOUNT INPUTS:", {
-            "phone_number": phone_number,
-            "secret_code": secret_code,
-            "bank_number": bank_number,
-            "branch_number": branch_number,
-            "account_number": account_number,
-            "name": name,
-        })
+        if not bank_number:
+            return yemot_read(
+                yemot_prompt("REG_ENTER_BANK"),
+                "bank_number",
+                2, 2,
+                read_type="Number",
+                confirm=True,
+            )
 
         if not secret_code:
             resp = yemot_read(
@@ -197,30 +219,66 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             account_number=account_number,
         )
 
-        print("OPEN_ACCOUNT RESULT:", repr(result))
-
-        session_delete(request, "secret_code", "bank_number", "branch_number", "account_number", "name")
-
         if not result.get("success"):
-            logger.error("open_account failed | result=%r", result)
+            if result.get("error_code") == "PHONE_ALREADY_EXISTS":
+                msg = (result.get("message") or "מספר טלפון כבר רשום").replace("&", " ")
+                return yemot_say(msg, go_to_folder="/")
 
-            if result.get("error_code") != "PHONE_ALREADY_EXISTS":
-                resp = yemot_error("ERR_SYSTEM", go_to_folder="../")
-                print("RESP ERR_SYSTEM:", repr(resp))
-                return resp
+            return yemot_error("ERR_SYSTEM", go_to_folder="../")
 
-            msg = (result.get("message") or "מספר טלפון כבר רשום").replace("&", " ")
-            resp = yemot_say(msg, go_to_folder="/")
-            print("RESP PHONE EXISTS:", repr(resp))
-            return resp
+        user_id = str(result["user_id"])
 
-        session_set(request, "user_id", str(result["user_id"]))
+        session_set(request, "user_id", user_id)
         session_set(request, "authenticated", "1")
         session_set(request, "phone", phone_number)
 
-        resp = yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
-        print("RESP SUCCESS:", repr(resp))
-        return resp
+        session_delete(
+            request,
+            "secret_code",
+            "bank_number",
+            "branch_number",
+            "account_number",
+            "name",
+            "name_choice",
+        )
+
+        if name_choice == "1":
+            session_set(request, "pending_name_record_user_id", user_id)
+            return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/record_name")
+
+        return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
+
+    if action == "record_name":
+        user_id = session_get(request, "pending_name_record_user_id") or session_get(request, "user_id")
+        if not user_id:
+            return "go_to_folder=/2"
+
+        file_path = get_param(request, "name_recording")
+
+        if not file_path:
+            file_name = f"name_{user_id}"
+
+            return yemot_record(
+                yemot_prompt("REG_RECORD_NAME"),
+                "name_recording",
+                folder="/99/names",
+                file_name=file_name,
+                finish_on_hash_menu=True,
+                save_on_hangup=True,
+                append_to_existing=False,
+                min_seconds=1,
+                max_seconds=10,
+            )
+
+        save_user_name_recording(
+            conn,
+            user_id=user_id,
+            file_path=file_path,
+        )
+
+        session_delete(request, "pending_name_record_user_id", "name_recording")
+
+        return "go_to_folder=/2"
 
     if action == "get_balance":
         user_id, err = require_auth(request)

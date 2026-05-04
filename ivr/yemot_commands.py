@@ -46,6 +46,9 @@ PROMPTS = {
     "REG_ENTER_BRANCH": "111",
     "REG_ENTER_ACCOUNT": "112",
     "REG_SUCCESS": "950",
+    "REG_RECORD_NAME_CHOICE": "911",
+    "REG_ENTER_NAME": "912",
+    "REG_RECORD_NAME": "913",
 
     # Balance / currency
     "BAL_YOUR_BALANCE_IS": "200",
@@ -345,6 +348,41 @@ def yemot_play(message: YemotMessage, *, go_to_folder: str | None = None) -> str
         return yemot_say(message, go_to_folder=go_to_folder)
     base = f"play={first}"
     return f"{base}&go_to_folder={go_to_folder}" if go_to_folder else base
+
+
+def yemot_record(
+        text: YemotMessage | list[YemotMessage],
+        param: str,
+        *,
+        folder: str,
+        file_name: str | None = None,
+        finish_on_hash_menu: bool = True,
+        save_on_hangup: bool = True,
+        append_to_existing: bool = False,
+        min_seconds: int | None = None,
+        max_seconds: int | None = None,
+) -> str:
+    if isinstance(text, list):
+        first_part = yemot_render_parts(text, clean_text=True)
+    else:
+        first_part = yemot_first_part(text, clean_text=True)
+
+    fields = [""] * 10
+    fields[0] = param
+    fields[2] = "record"
+    fields[3] = folder
+    fields[4] = file_name or ""
+    fields[5] = "yes" if finish_on_hash_menu else "no"
+    fields[6] = "yes" if save_on_hangup else "no"
+    fields[7] = "yes" if append_to_existing else "no"
+
+    if min_seconds is not None:
+        fields[8] = str(min_seconds)
+
+    if max_seconds is not None:
+        fields[9] = str(max_seconds)
+
+    return f"read={first_part}={','.join(fields)}"
 
 
 # =========================
