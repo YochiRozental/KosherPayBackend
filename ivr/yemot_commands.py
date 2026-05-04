@@ -139,7 +139,9 @@ PROMPTS = {
 }
 
 BACK_VALUE = "BACK"
-
+DEFAULT_IVR_TIMEOUT = 8
+MAX_TIMEOUT_REPEATS = 3
+TIMEOUT_REPEAT_VALUE = "REPEAT"
 
 def prompt_path(key: str) -> str:
     """
@@ -186,13 +188,15 @@ def yemot_first_part(message: YemotMessage, *, clean_text: bool = True) -> str:
 # Core commands
 # =========================
 
+def is_timeout_repeat(value: str | None) -> bool:
+    return value == TIMEOUT_REPEAT_VALUE
 
 def yemot_read(
         text: Union[YemotMessage, list[YemotMessage]],
         param: str,
         min_len: int,
         max_len: int,
-        timeout: int = 10,
+        timeout: int = DEFAULT_IVR_TIMEOUT,
         read_type: str = "Digits",
         confirm: bool = True,
         playback: bool = True,
@@ -231,6 +235,7 @@ def read_with_back(
         min_len: int,
         max_len: int,
         *,
+        timeout: int = DEFAULT_IVR_TIMEOUT,
         read_type: str = "Digits",
         confirm: bool = True,
         playback: bool = True,
@@ -240,11 +245,12 @@ def read_with_back(
         param,
         min_len,
         max_len,
+        timeout=timeout,
         read_type=read_type,
         confirm=confirm,
         playback=playback,
         read_none_ok=True,
-        none_value=BACK_VALUE,
+        none_value=TIMEOUT_REPEAT_VALUE,
     )
 
 
@@ -252,7 +258,7 @@ def yemot_menu(
         text: Union[YemotMessage, list[YemotMessage]],
         var: str,
         *,
-        timeout: int = 7,
+        timeout: int = DEFAULT_IVR_TIMEOUT,
         options: str = "1.2.3",
         confirm: bool = False,
         read_none_ok: bool = False,
@@ -289,7 +295,7 @@ def menu_with_back(
         text: YemotMessage | list[YemotMessage],
         var: str,
         *,
-        timeout: int = 7,
+        timeout: int = DEFAULT_IVR_TIMEOUT,
         options: str = "1.2.3",
         confirm: bool = False,
 ) -> str:
@@ -300,7 +306,7 @@ def menu_with_back(
         options=options,
         confirm=confirm,
         read_none_ok=True,
-        none_value=BACK_VALUE,
+        none_value=TIMEOUT_REPEAT_VALUE,
     )
 
 

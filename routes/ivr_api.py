@@ -31,8 +31,9 @@ from ivr.constants import EDIT_FIELDS, TYPE_HE, IL_TZ, SR_STATUS_KEY_MAP, HIST_T
 from ivr.formatters import clean, amount_to_int
 from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg, \
     go_back, parse_amount
+from ivr.utils import repeatable_read
 from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
-    YemotMessage, read_with_back, is_back, menu_with_back
+    YemotMessage, is_back, menu_with_back
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
 
 logger = logging.getLogger("kosherpay")
@@ -261,14 +262,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         to_phone = get_param(request, "to_phone")
         amount_str = get_param(request, "amount_transfer")
 
-        if not to_phone:
-            return read_with_back(
-                yemot_prompt("TR_ENTER_TO_PHONE"),
-                "to_phone",
-                9,
-                10,
-                read_type="Digits",
-            )
+        read_resp = repeatable_read(
+            request,
+            value=to_phone,
+            session_key="transfer_to_phone_timeout_count",
+            prompt=yemot_prompt("TR_ENTER_TO_PHONE"),
+            param="to_phone",
+            min_len=9,
+            max_len=10,
+            read_type="Digits",
+            fail_folder="../",
+        )
+        if read_resp:
+            return read_resp
 
         if is_back(to_phone):
             return go_back(request, "to_phone", "amount_transfer", target="../")
@@ -278,14 +284,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "to_phone", "amount_transfer")
             return yemot_error("TR_USER_NOT_FOUND", go_to_folder="./")
 
-        if not amount_str:
-            return read_with_back(
-                yemot_prompt("TR_ENTER_AMOUNT"),
-                "amount_transfer",
-                1,
-                8,
-                read_type="Number",
-            )
+        read_resp = repeatable_read(
+            request,
+            value=amount_str,
+            session_key="transfer_amount_timeout_count",
+            prompt=yemot_prompt("TR_ENTER_AMOUNT"),
+            param="amount_transfer",
+            min_len=1,
+            max_len=8,
+            read_type="Number",
+            fail_folder="./",
+        )
+        if read_resp:
+            return read_resp
 
         if is_back(amount_str):
             return go_back(request, "to_phone", "amount_transfer", target="./")
@@ -312,14 +323,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         pay_req_phone = get_param(request, "pay_req_phone")
         pay_req_amount_str = get_param(request, "pay_req_amount")
 
-        if not pay_req_phone:
-            return read_with_back(
-                yemot_prompt("PR_ENTER_PHONE"),
-                "pay_req_phone",
-                9,
-                10,
-                read_type="Digits",
-            )
+        read_resp = repeatable_read(
+            request,
+            value=pay_req_phone,
+            session_key="pay_req_phone_timeout_count",
+            prompt=yemot_prompt("PR_ENTER_PHONE"),
+            param="pay_req_phone",
+            min_len=9,
+            max_len=10,
+            read_type="Digits",
+            fail_folder="../",
+        )
+        if read_resp:
+            return read_resp
 
         if is_back(pay_req_phone):
             return go_back(request, "pay_req_phone", "pay_req_amount", target="../")
@@ -329,14 +345,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "pay_req_phone", "pay_req_amount")
             return yemot_error("TR_USER_NOT_FOUND", go_to_folder="./")
 
-        if not pay_req_amount_str:
-            return read_with_back(
-                yemot_prompt("PR_ENTER_AMOUNT"),
-                "pay_req_amount",
-                1,
-                8,
-                read_type="Number",
-            )
+        read_resp = repeatable_read(
+            request,
+            value=pay_req_amount_str,
+            session_key="pay_req_amount_timeout_count",
+            prompt=yemot_prompt("PR_ENTER_AMOUNT"),
+            param="pay_req_amount",
+            min_len=1,
+            max_len=8,
+            read_type="Number",
+            fail_folder="./",
+        )
+        if read_resp:
+            return read_resp
 
         if is_back(pay_req_amount_str):
             return go_back(request, "pay_req_phone", "pay_req_amount", target="./")
@@ -362,14 +383,19 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         amount_str = get_param(request, "amount_d") or get_param(request, "amount_deposit")
 
-        if not amount_str:
-            return read_with_back(
-                yemot_prompt("DEP_ENTER_AMOUNT"),
-                "amount_d",
-                1,
-                8,
-                read_type="Number",
-            )
+        read_resp = repeatable_read(
+            request,
+            value=amount_str,
+            session_key="deposit_amount_timeout_count",
+            prompt=yemot_prompt("DEP_ENTER_AMOUNT"),
+            param="amount_d",
+            min_len=1,
+            max_len=8,
+            read_type="Number",
+            fail_folder="../",
+        )
+        if read_resp:
+            return read_resp
 
         if is_back(amount_str):
             return go_back(request, "amount_d", "amount_deposit", target="../")
@@ -389,37 +415,43 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         return yemot_say(yemot_prompt("DEP_SUCCESS"), go_to_folder="../")
 
     if action == "withdraw":
-        user_id, err = require_auth(request)
-        if err:
-            return err
+        if action == "withdraw":
+            user_id, err = require_auth(request)
+            if err:
+                return err
 
-        amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
+            amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
 
-        if not amount_str:
-            return read_with_back(
-                yemot_prompt("WDR_ENTER_AMOUNT"),
-                "amount_w",
-                1,
-                8,
+            read_resp = repeatable_read(
+                request,
+                value=amount_str,
+                session_key="withdraw_amount_timeout_count",
+                prompt=yemot_prompt("WDR_ENTER_AMOUNT"),
+                param="amount_w",
+                min_len=1,
+                max_len=8,
                 read_type="Number",
+                fail_folder="../",
             )
+            if read_resp:
+                return read_resp
 
-        if is_back(amount_str):
-            return go_back(request, "amount_w", "amount_withdraw", target="../")
+            if is_back(amount_str):
+                return go_back(request, "amount_w", "amount_withdraw", target="../")
 
-        amount = parse_amount(amount_str)
-        if amount is None:
+            amount = parse_amount(amount_str)
+            if amount is None:
+                session_delete(request, "amount_w", "amount_withdraw")
+                return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
+
+            result = withdraw(conn, user_id=user_id, amount=amount)
+
             session_delete(request, "amount_w", "amount_withdraw")
-            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
-        result = withdraw(conn, user_id=user_id, amount=amount)
+            if not result.get("success"):
+                return yemot_error("ERR_GENERIC", go_to_folder="../")
 
-        session_delete(request, "amount_w", "amount_withdraw")
-
-        if not result.get("success"):
-            return yemot_error("ERR_GENERIC", go_to_folder="../")
-
-        return yemot_say(yemot_prompt("WDR_SUCCESS"), go_to_folder="../")
+            return yemot_say(yemot_prompt("WDR_SUCCESS"), go_to_folder="../")
 
     if action == "received_requests":
         user_id, err = require_auth(request)
