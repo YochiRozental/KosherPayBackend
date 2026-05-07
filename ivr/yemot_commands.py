@@ -146,6 +146,7 @@ DEFAULT_IVR_TIMEOUT = 8
 MAX_TIMEOUT_REPEATS = 3
 TIMEOUT_REPEAT_VALUE = "REPEAT"
 
+
 def prompt_path(key: str) -> str:
     """
     מחזיר נתיב מלא לקובץ הקלטה לפי מפתח.
@@ -193,6 +194,7 @@ def yemot_first_part(message: YemotMessage, *, clean_text: bool = True) -> str:
 
 def is_timeout_repeat(value: str | None) -> bool:
     return value == TIMEOUT_REPEAT_VALUE
+
 
 def yemot_read(
         text: Union[YemotMessage, list[YemotMessage]],
@@ -382,7 +384,8 @@ def yemot_record(
     if max_seconds is not None:
         fields[9] = str(max_seconds)
 
-    return f"read={first_part}={','.join(fields)}"
+    second_part = ",".join(fields)
+    return f"read={first_part}={second_part}"
 
 
 # =========================

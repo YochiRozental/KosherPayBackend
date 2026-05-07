@@ -17,6 +17,7 @@ from domain.payment_requests_services import (
     reject_payment_request,
     get_my_sent_payment_requests
 )
+from domain.recordings_services import get_user_name_recording, save_user_name_recording
 from domain.transactions_services import (
     transfer, deposit, withdraw, get_transaction_history
 )
@@ -28,14 +29,31 @@ from domain.users_services import (
 from domain.wallet_services import get_balance
 from ivr.constants import EDIT_FIELDS, TYPE_HE, IL_TZ, SR_STATUS_KEY_MAP, HIST_TYPE_TO_PROMPT
 from ivr.formatters import clean, amount_to_int
-from ivr.utils import get_param, require_auth, date_for_yemot, to_update_kwargs, get_user_value, current_value_msg, \
-    go_back, parse_amount
-from ivr.utils import repeatable_read
-from ivr.yemot_commands import yemot_read, yemot_menu, yemot_error, yemot_say, yemot_prompt, yemot_say_parts, \
-    YemotMessage, is_back, menu_with_back
+from ivr.utils import (
+    current_value_msg,
+    date_for_yemot,
+    get_param,
+    get_user_value,
+    go_back,
+    parse_amount,
+    repeatable_read,
+    require_auth,
+    to_update_kwargs,
+)
+from ivr.yemot_commands import (
+    YemotFile,
+    YemotMessage,
+    is_back,
+    menu_with_back,
+    yemot_error,
+    yemot_menu,
+    yemot_prompt,
+    yemot_read,
+    yemot_record,
+    yemot_say,
+    yemot_say_parts,
+)
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
-from domain.recordings_services import get_user_name_recording, save_user_name_recording
-from ivr.yemot_commands import yemot_record
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
@@ -106,7 +124,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         rec = get_user_name_recording(conn, user_id=user_id)
 
         if rec.get("success") and rec.get("exists") and rec.get("file_path"):
-            parts.append(rec["file_path"])
+            parts.append(YemotFile(rec["file_path"]))
             return yemot_say_parts(parts, go_to_folder="/2")
 
         me = get_me(conn, user_id=user_id)
@@ -120,16 +138,24 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
     if action == "open_account":
         if not phone_number:
-            resp = yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
-            print("RESP NO PHONE:", repr(resp))
-            return resp
+            return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
         secret_code = get_param(request, "secret_code") or (session_get(request, "secret_code") or "")
+        name_choice = get_param(request, "name_choice") or (session_get(request, "name_choice") or "")
+        name = get_param(request, "name") or (session_get(request, "name") or "")
+        name_recording = get_param(request, "name_recording") or (session_get(request, "name_recording") or "")
         bank_number = get_param(request, "bank_number") or (session_get(request, "bank_number") or "")
         branch_number = get_param(request, "branch_number") or (session_get(request, "branch_number") or "")
         account_number = get_param(request, "account_number") or (session_get(request, "account_number") or "")
-        name = get_param(request, "name") or (session_get(request, "name") or "")
-        name_choice = get_param(request, "name_choice") or (session_get(request, "name_choice") or "")
+
+        if not secret_code:
+            return yemot_read(
+                yemot_prompt("AUTH_ENTER_SECRET"),
+                "secret_code",
+                6, 6,
+                read_type="Digits",
+                confirm=True
+            )
 
         if not name_choice:
             return yemot_menu(
@@ -141,6 +167,23 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             )
 
         session_set(request, "name_choice", name_choice)
+
+        if name_choice == "1" and not name_recording:
+            file_name = f"name_pending_{phone_number}"
+            file_path = f"/99/names/{file_name}"
+            session_set(request, "name_recording_path", file_path)
+
+            return yemot_record(
+                yemot_prompt("REG_RECORD_NAME"),
+                "name_recording",
+                folder="/99/names",
+                file_name=file_name,
+                min_seconds=1,
+                max_seconds=10,
+            )
+
+        if name_choice == "1" and name_recording:
+            session_set(request, "name_recording", name_recording)
 
         if name_choice == "2" and not name:
             return yemot_read(
@@ -162,52 +205,26 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 "bank_number",
                 2, 2,
                 read_type="Number",
-                confirm=True,
-            )
-
-        if not secret_code:
-            resp = yemot_read(
-                yemot_prompt("AUTH_ENTER_SECRET"),
-                "secret_code",
-                6, 6,
-                read_type="Digits",
                 confirm=True
             )
-            print("RESP SECRET:", repr(resp))
-            return resp
-
-        if not bank_number:
-            resp = yemot_read(
-                yemot_prompt("REG_ENTER_BANK"),
-                "bank_number",
-                2, 2,
-                read_type="Number",
-                confirm=True
-            )
-            print("RESP BANK:", repr(resp))
-            return resp
 
         if not branch_number:
-            resp = yemot_read(
+            return yemot_read(
                 yemot_prompt("REG_ENTER_BRANCH"),
                 "branch_number",
                 3, 3,
                 read_type="Number",
                 confirm=True
             )
-            print("RESP BRANCH:", repr(resp))
-            return resp
 
         if not account_number:
-            resp = yemot_read(
+            return yemot_read(
                 yemot_prompt("REG_ENTER_ACCOUNT"),
                 "account_number",
                 6, 6,
                 read_type="Digits",
                 confirm=True
             )
-            print("RESP ACCOUNT:", repr(resp))
-            return resp
 
         result = open_account(
             conn,
@@ -228,6 +245,16 @@ def ivr_api(request: Request, conn=Depends(get_db)):
 
         user_id = str(result["user_id"])
 
+        if name_choice == "1":
+            file_path = session_get(request, "name_recording_path") or name_recording
+
+            if file_path:
+                save_user_name_recording(
+                    conn,
+                    user_id=user_id,
+                    file_path=file_path,
+                )
+
         session_set(request, "user_id", user_id)
         session_set(request, "authenticated", "1")
         session_set(request, "phone", phone_number)
@@ -240,45 +267,11 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             "account_number",
             "name",
             "name_choice",
+            "name_recording",
+            "name_recording_path",
         )
 
-        if name_choice == "1":
-            session_set(request, "pending_name_record_user_id", user_id)
-            return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/record_name")
-
-        return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/2")
-
-    if action == "record_name":
-        user_id = session_get(request, "pending_name_record_user_id") or session_get(request, "user_id")
-        if not user_id:
-            return "go_to_folder=/2"
-
-        file_path = get_param(request, "name_recording")
-
-        if not file_path:
-            file_name = f"name_{user_id}"
-
-            return yemot_record(
-                yemot_prompt("REG_RECORD_NAME"),
-                "name_recording",
-                folder="/99/names",
-                file_name=file_name,
-                finish_on_hash_menu=True,
-                save_on_hangup=True,
-                append_to_existing=False,
-                min_seconds=1,
-                max_seconds=10,
-            )
-
-        save_user_name_recording(
-            conn,
-            user_id=user_id,
-            file_path=file_path,
-        )
-
-        session_delete(request, "pending_name_record_user_id", "name_recording")
-
-        return "go_to_folder=/2"
+        return yemot_say(yemot_prompt("REG_SUCCESS"), go_to_folder="/1")
 
     if action == "get_balance":
         user_id, err = require_auth(request)
@@ -473,43 +466,42 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         return yemot_say(yemot_prompt("DEP_SUCCESS"), go_to_folder="../")
 
     if action == "withdraw":
-        if action == "withdraw":
-            user_id, err = require_auth(request)
-            if err:
-                return err
+        user_id, err = require_auth(request)
+        if err:
+            return err
 
-            amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
+        amount_str = get_param(request, "amount_w") or get_param(request, "amount_withdraw")
 
-            read_resp = repeatable_read(
-                request,
-                value=amount_str,
-                session_key="withdraw_amount_timeout_count",
-                prompt=yemot_prompt("WDR_ENTER_AMOUNT"),
-                param="amount_w",
-                min_len=1,
-                max_len=8,
-                read_type="Number",
-                fail_folder="../",
-            )
-            if read_resp:
-                return read_resp
+        read_resp = repeatable_read(
+            request,
+            value=amount_str,
+            session_key="withdraw_amount_timeout_count",
+            prompt=yemot_prompt("WDR_ENTER_AMOUNT"),
+            param="amount_w",
+            min_len=1,
+            max_len=8,
+            read_type="Number",
+            fail_folder="../",
+        )
+        if read_resp:
+            return read_resp
 
-            if is_back(amount_str):
-                return go_back(request, "amount_w", "amount_withdraw", target="../")
+        if is_back(amount_str):
+            return go_back(request, "amount_w", "amount_withdraw", target="../")
 
-            amount = parse_amount(amount_str)
-            if amount is None:
-                session_delete(request, "amount_w", "amount_withdraw")
-                return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
-
-            result = withdraw(conn, user_id=user_id, amount=amount)
-
+        amount = parse_amount(amount_str)
+        if amount is None:
             session_delete(request, "amount_w", "amount_withdraw")
+            return yemot_error("TR_AMOUNT_INVALID", go_to_folder="./")
 
-            if not result.get("success"):
-                return yemot_error("ERR_GENERIC", go_to_folder="../")
+        result = withdraw(conn, user_id=user_id, amount=amount)
 
-            return yemot_say(yemot_prompt("WDR_SUCCESS"), go_to_folder="../")
+        session_delete(request, "amount_w", "amount_withdraw")
+
+        if not result.get("success"):
+            return yemot_error("ERR_GENERIC", go_to_folder="../")
+
+        return yemot_say(yemot_prompt("WDR_SUCCESS"), go_to_folder="../")
 
     if action == "received_requests":
         user_id, err = require_auth(request)
@@ -1020,9 +1012,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 [yemot_prompt("EDIT_ENTER_PREFIX"), label, yemot_prompt("EDIT_ENTER_SUFFIX")],
                 var_name, mn, mx, read_type=read_type, confirm=True
             )
-
-        print("USER KEYS:", sorted(user.keys()))
-        print("USER RAW:", user)
 
         parts = [
             yemot_prompt("EDIT_FIELD_IS"),
