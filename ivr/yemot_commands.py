@@ -49,6 +49,9 @@ PROMPTS = {
     "REG_RECORD_NAME_CHOICE": "911",
     "REG_ENTER_NAME": "912",
     "REG_RECORD_NAME": "913",
+    "REG_ADD_MORE_PHONES": "914",
+    "REG_EXTRA_PHONE_COUNT": "915",
+    "REG_ENTER_EXTRA_PHONE": "916",
 
     # Balance / currency
     "BAL_YOUR_BALANCE_IS": "200",
