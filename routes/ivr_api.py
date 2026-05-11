@@ -39,6 +39,7 @@ from ivr.utils import (
     repeatable_read,
     require_auth,
     to_update_kwargs,
+    get_param_or_session,
 )
 from ivr.yemot_commands import (
     YemotFile,
@@ -140,15 +141,15 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         if not phone_number:
             return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
-        secret_code = get_param(request, "secret_code") or (session_get(request, "secret_code") or "")
-        name_choice = get_param(request, "name_choice") or (session_get(request, "name_choice") or "")
-        name = get_param(request, "name") or (session_get(request, "name") or "")
-        name_recording = get_param(request, "name_recording") or (session_get(request, "name_recording") or "")
-        bank_number = get_param(request, "bank_number") or (session_get(request, "bank_number") or "")
-        branch_number = get_param(request, "branch_number") or (session_get(request, "branch_number") or "")
-        account_number = get_param(request, "account_number") or (session_get(request, "account_number") or "")
-        add_phones_choice = get_param(request, "add_phones_choice") or (session_get(request, "add_phones_choice") or "")
-        extra_phone_count = get_param(request, "extra_phone_count") or (session_get(request, "extra_phone_count") or "")
+        secret_code = get_param_or_session(request, "secret_code")
+        name_choice = get_param_or_session(request, "name_choice")
+        name = get_param_or_session(request, "name")
+        name_recording = get_param_or_session(request, "name_recording")
+        bank_number = get_param_or_session(request, "bank_number")
+        branch_number = get_param_or_session(request, "branch_number")
+        account_number = get_param_or_session(request, "account_number")
+        add_phones_choice = get_param_or_session(request, "add_phones_choice")
+        extra_phone_count = get_param_or_session(request, "extra_phone_count")
         extra_phone_i = int(session_get(request, "extra_phone_i") or "1")
         extra_phones_raw = session_get(request, "extra_phones") or ""
         extra_phones = [p for p in extra_phones_raw.split(",") if p]
@@ -161,6 +162,8 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 read_type="Digits",
                 confirm=True
             )
+
+        session_set(request, "secret_code", secret_code)
 
         if not name_choice:
             return yemot_menu(
@@ -187,7 +190,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 max_seconds=10,
             )
 
-        if name_choice == "1" and name_recording:
+        if name_recording:
             session_set(request, "name_recording", name_recording)
 
         if name_choice == "2" and not name:
@@ -275,18 +278,32 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 if current_extra_phone == phone_number:
                     session_delete(request, param_name)
 
-                    return yemot_say(
-                        yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
-                        go_to_folder="./",
+                    return yemot_read(
+                        [
+                            yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
+                            yemot_prompt("REG_ENTER_EXTRA_PHONE"),
+                        ],
+                        param_name,
+                        9,
+                        10,
+                        read_type="Digits",
+                        confirm=True,
                     )
 
                 # לא לאפשר כפילות בתוך אותה הרשמה
                 if current_extra_phone in extra_phones:
                     session_delete(request, param_name)
 
-                    return yemot_say(
-                        yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
-                        go_to_folder="./",
+                    return yemot_read(
+                        [
+                            yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
+                            yemot_prompt("REG_ENTER_EXTRA_PHONE"),
+                        ],
+                        param_name,
+                        9,
+                        10,
+                        read_type="Digits",
+                        confirm=True,
                     )
 
                 # לא לאפשר מספר שכבר קיים במערכת
@@ -295,9 +312,16 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 if existing_user:
                     session_delete(request, param_name)
 
-                    return yemot_say(
-                        yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
-                        go_to_folder="./",
+                    return yemot_read(
+                        [
+                            yemot_prompt("REG_PHONE_ALREADY_EXISTS"),
+                            yemot_prompt("REG_ENTER_EXTRA_PHONE"),
+                        ],
+                        param_name,
+                        9,
+                        10,
+                        read_type="Digits",
+                        confirm=True,
                     )
 
                 extra_phones.append(current_extra_phone)
@@ -306,7 +330,6 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 session_set(request, "extra_phone_i", str(extra_phone_i + 1))
 
                 return "go_to_folder=./"
-
 
         result = open_account(
             conn,

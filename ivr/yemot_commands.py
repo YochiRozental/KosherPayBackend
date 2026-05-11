@@ -52,6 +52,7 @@ PROMPTS = {
     "REG_ADD_MORE_PHONES": "914",
     "REG_EXTRA_PHONE_COUNT": "915",
     "REG_ENTER_EXTRA_PHONE": "916",
+    "REG_PHONE_ALREADY_EXISTS": "917",
 
     # Balance / currency
     "BAL_YOUR_BALANCE_IS": "200",

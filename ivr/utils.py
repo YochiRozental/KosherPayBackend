@@ -6,7 +6,7 @@ from fastapi import Request
 from ivr.constants import IL_TZ, BANK_MAP
 from ivr.yemot_commands import YemotMessage, yemot_prompt, MAX_TIMEOUT_REPEATS
 from ivr.yemot_session import session_get, session_set, session_delete
-
+from urllib.parse import unquote_plus
 
 def ensure_success(result: dict, *, status_code: int = status.HTTP_400_BAD_REQUEST) -> dict:
     if not result.get("success"):
@@ -24,8 +24,20 @@ def get_user_value(user: dict, field_key: str):
     return user.get(field_key)
 
 
+def decode_yemot_value(value: str | None) -> str:
+    if not value:
+        return ""
+    return unquote_plus(str(value)).strip()
+
+
 def get_param(request: Request, key: str) -> str:
-    return (request.query_params.get(key) or "").strip()
+    return decode_yemot_value(request.query_params.get(key))
+
+
+def get_param_or_session(request: Request, key: str) -> str:
+    return decode_yemot_value(
+        get_param(request, key) or session_get(request, key)
+    )
 
 
 def require_auth(request: Request) -> tuple[str | None, str | None]:
