@@ -84,13 +84,15 @@ def create_wallet(
 
 
 def create_bank_account(
-    conn,
-    *,
-    user_id: UUID,
-    bank_number: str,
-    branch_number: str,
-    account_number: str,
-    account_holder: str,
+        conn,
+        *,
+        user_id: UUID,
+        bank_number: str,
+        branch_number: str,
+        account_number: str,
+        account_holder: str,
+        bank_branch_id: int,
+        verification_status: str = "pending_verification",
 ) -> UUID:
     bank_number = (bank_number or "").strip()
     branch_number = (branch_number or "").strip()
@@ -104,12 +106,26 @@ def create_bank_account(
         cur.execute(
             """
             INSERT INTO bank_accounts (
-                user_id, bank_number, branch_number, account_number, account_holder
+                user_id,
+                bank_number,
+                branch_number,
+                account_number,
+                account_holder,
+                bank_branch_id,
+                verification_status
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (user_id, bank_number, branch_number, account_number, account_holder),
+            (
+                user_id,
+                bank_number,
+                branch_number,
+                account_number,
+                account_holder,
+                bank_branch_id,
+                verification_status,
+            ),
         )
         row = cur.fetchone()
         if not row:

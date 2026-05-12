@@ -9,6 +9,12 @@ from repositories.account_creation_repo import (
     create_bank_account,
     is_phone_unique_violation,
 )
+from repositories.bank_branches_repo import (
+    get_active_bank_branch,
+    normalize_account_number,
+    normalize_bank_code,
+    normalize_branch_code,
+)
 from repositories.users_repo import get_user_id_by_phone
 
 
@@ -51,10 +57,36 @@ def open_account(
     if not phone_number or not secret_code or not name:
         return {"success": False, "message": "חסרים פרטים חובה"}
 
+    try:
+        bank_number = normalize_bank_code(bank_number)
+        branch_number = normalize_branch_code(branch_number)
+        account_number = normalize_account_number(account_number)
+
+    except ValueError:
+        return {
+            "success": False,
+            "message": "פרטי חשבון הבנק אינם תקינים",
+            "error_code": "INVALID_BANK_ACCOUNT_DETAILS",
+        }
+
+    bank_branch = get_active_bank_branch(
+        conn,
+        bank_number=bank_number,
+        branch_number=branch_number,
+    )
+
+    if not bank_branch:
+        return {
+            "success": False,
+            "message": "בנק או סניף לא קיימים או שאינם פעילים",
+            "error_code": "INVALID_BANK_BRANCH",
+        }
+
     all_phones = [phone_number, *additional_phones]
 
     for phone in all_phones:
         existing = get_user_id_by_phone(conn, phone)
+
         if existing:
             return {
                 "success": False,
@@ -65,6 +97,7 @@ def open_account(
 
     try:
         user_id = create_user(conn, name=name)
+
         secret_hash = hash_secret(secret_code)
 
         user_phone_id = create_user_phone(
@@ -103,6 +136,8 @@ def open_account(
             branch_number=branch_number,
             account_number=account_number,
             account_holder=name,
+            bank_branch_id=bank_branch["id"],
+            verification_status="pending_verification",
         )
 
         conn.commit()
@@ -116,7 +151,6 @@ def open_account(
 
     except Exception as e:
         conn.rollback()
-        print("OPEN_ACCOUNT EXCEPTION:", repr(e))
 
         if is_phone_unique_violation(e):
             return {

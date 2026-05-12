@@ -55,6 +55,7 @@ from ivr.yemot_commands import (
     yemot_say_parts,
 )
 from ivr.yemot_session import init_yemot_session, session_set, session_get, session_delete
+from repositories.bank_branches_repo import get_active_bank_branch, get_bank_by_code
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
@@ -216,6 +217,23 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True
             )
 
+        bank = get_bank_by_code(conn, bank_number=bank_number)
+
+        if not bank:
+            session_delete(request, "bank_number")
+
+            return yemot_read(
+                [
+                    yemot_prompt("REG_INVALID_BANK"),
+                    yemot_prompt("REG_ENTER_BANK"),
+                ],
+                "bank_number",
+                2,
+                2,
+                read_type="Number",
+                confirm=True,
+            )
+
         if not branch_number:
             return yemot_read(
                 yemot_prompt("REG_ENTER_BRANCH"),
@@ -223,6 +241,27 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 3, 3,
                 read_type="Number",
                 confirm=True
+            )
+
+        bank_branch = get_active_bank_branch(
+            conn,
+            bank_number=bank_number,
+            branch_number=branch_number,
+        )
+
+        if not bank_branch:
+            session_delete(request, "branch_number")
+
+            return yemot_read(
+                [
+                    yemot_prompt("REG_INVALID_BANK_BRANCH"),
+                    yemot_prompt("REG_ENTER_BRANCH"),
+                ],
+                "branch_number",
+                3,
+                3,
+                read_type="Number",
+                confirm=True,
             )
 
         if not account_number:
