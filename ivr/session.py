@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 
 from fastapi import Request
 
 from db.redis_client import get_redis
-
-SESSION_TTL_MIN = int(os.environ.get("IVR_SESSION_TTL_MIN", "60"))
+from ivr.config import SESSION_TTL_MIN
 
 ALLOWED_KEYS = {
     "bank_number",

@@ -19,10 +19,10 @@ from domain.transactions_services import (
 )
 from domain.users_services import get_me, update_me
 from domain.wallet_services import get_balance
+from ivr.http import ensure_success
 from repositories.users_repo import (
     get_user_id_by_phone,
 )
-from ivr.utils import ensure_success
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
     PaymentRequestRequest,
