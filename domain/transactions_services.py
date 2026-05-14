@@ -10,29 +10,6 @@ from repositories.transactions_repo import (
 )
 
 
-def record_payment_request_decision(
-        conn,
-        *,
-        decision: str,
-        amount: float,
-        from_user_id: str,
-        to_user_id: str,
-        request_id: str,
-) -> None:
-    tx_type = "payment_approve" if decision == "approved" else "payment_reject"
-    desc = "אישור בקשת תשלום" if decision == "approved" else "דחיית בקשת תשלום"
-
-    create_transaction(
-        conn,
-        tx_type=tx_type,
-        amount=amount,
-        from_user_id=from_user_id,
-        to_user_id=to_user_id,
-        description=desc,
-        related_request_id=request_id,
-    )
-
-
 def get_transaction_history(
         conn,
         *,

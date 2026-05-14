@@ -4,8 +4,10 @@ from typing import Any
 
 import psycopg
 
-from repositories.recordings_repo import create_user_recording
-from repositories.recordings_repo import get_latest_user_recording
+from repositories.recordings_repo import (
+    create_user_recording,
+    get_latest_user_recording,
+)
 
 
 def get_user_name_recording(conn, *, user_id: str) -> dict[str, Any]:
@@ -57,8 +59,6 @@ def save_user_name_recording(conn, *, user_id: str, file_path: str) -> dict:
             record_type="name",
             file_path=file_path,
         )
-        conn.commit()
         return {"success": True, "recording": dict(recording)}
     except Exception as e:
-        conn.rollback()
         return {"success": False, "message": "שגיאה בשמירת הקלטה", "error": str(e)}

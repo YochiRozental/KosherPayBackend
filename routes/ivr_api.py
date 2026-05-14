@@ -10,6 +10,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from db.deps import get_db
 from domain.account_creation_services import open_account
 from domain.auth_services import authenticate_user
+from domain.bank_services import (
+    get_bank,
+    get_bank_branch,
+)
 from domain.payment_requests_services import (
     request_payment,
     get_my_payment_requests,
@@ -47,7 +51,6 @@ from ivr.parsers import get_param, parse_amount, get_param_or_session
 from ivr.profile import current_value_msg, to_update_kwargs, get_user_value
 from ivr.prompts import yemot_prompt, SR_STATUS_KEY_MAP, HIST_TYPE_TO_PROMPT, yemot_error
 from ivr.session import init_yemot_session, session_set, session_get, session_delete
-from repositories.bank_branches_repo import get_active_bank_branch, get_bank_by_code
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
@@ -209,7 +212,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True
             )
 
-        bank = get_bank_by_code(conn, bank_number=bank_number)
+        bank = get_bank(conn, bank_number=bank_number)
 
         if not bank:
             session_delete(request, "bank_number")
@@ -235,7 +238,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True
             )
 
-        bank_branch = get_active_bank_branch(
+        bank_branch = get_bank_branch(
             conn,
             bank_number=bank_number,
             branch_number=branch_number,
