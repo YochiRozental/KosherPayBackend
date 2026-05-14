@@ -140,8 +140,6 @@ def open_account(
             verification_status="pending_verification",
         )
 
-        conn.commit()
-
         return {
             "success": True,
             "message": "המשתמש נרשם בהצלחה",
@@ -150,8 +148,6 @@ def open_account(
         }
 
     except Exception as e:
-        conn.rollback()
-
         if is_phone_unique_violation(e):
             return {
                 "success": False,
@@ -159,8 +155,4 @@ def open_account(
                 "error_code": "PHONE_ALREADY_EXISTS",
             }
 
-        return {
-            "success": False,
-            "message": "שגיאה במערכת",
-            "error": str(e),
-        }
+        raise

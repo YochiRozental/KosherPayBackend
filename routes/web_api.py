@@ -18,11 +18,8 @@ from domain.transactions_services import (
     withdraw,
     transfer
 )
-from domain.users_services import get_me, update_me
+from domain.users_services import get_me, update_me, get_user_id_by_phone_service
 from domain.wallet_services import get_balance
-from repositories.users_repo import (
-    get_user_id_by_phone,
-)
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
     PaymentRequestRequest,
@@ -111,7 +108,7 @@ async def transfer_route(
         conn=Depends(get_db),
         current_user: dict = Depends(get_current_user),
 ):
-    recipient_id = get_user_id_by_phone(conn, request.recipient_phone)
+    recipient_id = get_user_id_by_phone_service(conn, request.recipient_phone)
     if not recipient_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -133,7 +130,7 @@ async def request_payment_route(
         conn=Depends(get_db),
         current_user: dict = Depends(get_current_user),
 ):
-    recipient_id = get_user_id_by_phone(conn, request.recipient_phone)
+    recipient_id = get_user_id_by_phone_service(conn, request.recipient_phone)
     if not recipient_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

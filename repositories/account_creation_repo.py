@@ -19,8 +19,6 @@ def create_user(conn, *, name: str) -> UUID:
             (name,),
         )
         row = cur.fetchone()
-        print("DEBUG ROW:", row, type(row))
-        print("DEBUG KEYS:", getattr(row, "keys", lambda: [])())
         if not row:
             raise RuntimeError("Failed to create user")
         return row["id"]
