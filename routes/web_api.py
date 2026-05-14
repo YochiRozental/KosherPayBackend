@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
 from auth.dependencies import get_current_user
+from common.http import ensure_success
 from db.deps import get_db
 from domain.account_creation_services import open_account
 from domain.auth_services import authenticate_user
@@ -19,7 +20,6 @@ from domain.transactions_services import (
 )
 from domain.users_services import get_me, update_me
 from domain.wallet_services import get_balance
-from ivr.http import ensure_success
 from repositories.users_repo import (
     get_user_id_by_phone,
 )
@@ -207,12 +207,3 @@ async def update_me_route(
         account_holder=payload.account_holder,
     )
     return ensure_success(result)
-
-
-@router.get("/db-health", include_in_schema=False)
-def db_health():
-    from db.connection import get_db_connection
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-            return {"db": "ok"}

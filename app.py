@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from routes.web_api import router as web_router
 from routes.admin_api import router as admin_router
 from routes.ivr_api import router as ivr_router
+from routes.health_api import router as health_router
 
 # -------------------------
 # Logging
@@ -34,20 +35,6 @@ app = FastAPI(
     title="KosherPay API",
     description="Payment system API",
     version="1.0.0",
-)
-
-ALLOWED_ORIGINS = [
-    "https://kosherpay.onrender.com",
-    "http://localhost:5173",
-    "http://localhost:8000",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 
@@ -73,7 +60,11 @@ cors_env = (os.getenv("CORS_ORIGINS") or "").strip()
 if cors_env:
     allow_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
 else:
-    allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    allow_origins = [
+        "https://kosherpay.onrender.com",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,6 +86,7 @@ async def health():
 app.include_router(web_router)
 app.include_router(admin_router)
 app.include_router(ivr_router)
+app.include_router(health_router)
 
 if __name__ == "__main__":
     import uvicorn
