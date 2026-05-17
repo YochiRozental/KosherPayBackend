@@ -9,7 +9,7 @@ from repositories.account_creation_repo import (
     create_bank_account,
     is_phone_unique_violation,
 )
-from repositories.bank_branches_repo import (
+from repositories.bank_repo import (
     get_active_bank_branch,
     normalize_account_number,
     normalize_bank_code,

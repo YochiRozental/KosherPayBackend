@@ -11,8 +11,8 @@ from db.deps import get_db
 from domain.account_creation_services import open_account
 from domain.auth_services import authenticate_user
 from domain.bank_services import (
-    get_bank,
-    get_bank_branch,
+    get_bank_by_code,
+    get_active_bank_branch,
 )
 from domain.payment_requests_services import (
     request_payment,
@@ -212,7 +212,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True
             )
 
-        bank = get_bank(conn, bank_number=bank_number)
+        bank = get_bank_by_code(conn, bank_number=bank_number)
 
         if not bank:
             session_delete(request, "bank_number")
@@ -238,7 +238,7 @@ def ivr_api(request: Request, conn=Depends(get_db)):
                 confirm=True
             )
 
-        bank_branch = get_bank_branch(
+        bank_branch = get_active_bank_branch(
             conn,
             bank_number=bank_number,
             branch_number=branch_number,

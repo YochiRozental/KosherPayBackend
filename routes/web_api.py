@@ -5,6 +5,7 @@ from common.http import ensure_success
 from db.deps import get_db
 from domain.account_creation_services import open_account
 from domain.auth_services import authenticate_user
+from domain.bank_services import validate_bank, validate_bank_branch
 from domain.payment_requests_services import (
     request_payment,
     get_my_payment_requests,
@@ -174,6 +175,27 @@ async def reject_request(
 ):
     result = reject_payment_request(conn, user_id=current_user["user_id"], request_id=req_id)
     return ensure_success(result)
+
+
+@router.get("/banks/validate")
+async def validate_bank_route(
+        bank_number: str = Query(..., min_length=1, max_length=10),
+        conn=Depends(get_db),
+):
+    return validate_bank(conn, bank_number=bank_number)
+
+
+@router.get("/banks/branches/validate")
+async def validate_bank_branch_route(
+        bank_number: str = Query(..., min_length=1, max_length=10),
+        branch_number: str = Query(..., min_length=1, max_length=10),
+        conn=Depends(get_db),
+):
+    return validate_bank_branch(
+        conn,
+        bank_number=bank_number,
+        branch_number=branch_number,
+    )
 
 
 # ============================
