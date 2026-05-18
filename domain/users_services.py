@@ -42,6 +42,7 @@ def _to_user_me(profile: Mapping[str, Any]) -> dict[str, Any]:
         "name": profile.get("name") or "",
         "role": profile.get("role") or "user",
         "phone": profile.get("phone") or "",
+        "additionalPhones": profile.get("additional_phones") or [],
         "bankAccount": {
             "bankNumber": profile.get("bank_number") or "",
             "branchNumber": profile.get("branch_number") or "",

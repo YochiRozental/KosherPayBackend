@@ -8,6 +8,7 @@ class OpenAccountRequest(BaseModel):
     bank_number: str = Field(..., min_length=1)
     branch_number: str = Field(..., min_length=1)
     account_number: str = Field(..., min_length=1)
+    additional_phones: list[str] = Field(default_factory=list)
 
 
 class OpenAccountResponse(BaseModel):

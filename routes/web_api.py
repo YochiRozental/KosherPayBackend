@@ -50,6 +50,7 @@ async def open_account_route(request: OpenAccountRequest, conn=Depends(get_db)):
         bank_number=request.bank_number,
         branch_number=request.branch_number,
         account_number=request.account_number,
+        additional_phones=request.additional_phones,
     )
 
     if not result.get("success"):

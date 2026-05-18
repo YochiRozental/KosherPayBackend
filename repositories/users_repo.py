@@ -57,25 +57,44 @@ def get_user_profile_by_id(conn, user_id: str) -> dict[str, Any] | None:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT u.id::text AS user_id, u.name,
+            SELECT u.id::text AS user_id,
+                   u.name,
                    u.role,
                    u.status,
-                   up.phone_number AS phone,
+                   primary_phone.phone_number AS phone,
+                   COALESCE(
+                       ARRAY_AGG(extra_phone.phone_number)
+                       FILTER (WHERE extra_phone.phone_number IS NOT NULL),
+                       '{}'
+                   ) AS additional_phones,
                    ba.bank_number,
                    ba.branch_number,
                    ba.account_number,
                    ba.account_holder
             FROM users u
-                     LEFT JOIN user_phones up
-                               ON up.user_id = u.id AND up.is_primary = TRUE
-                     LEFT JOIN bank_accounts ba
-                               ON ba.user_id = u.id
-            WHERE u.id = %s LIMIT 1
+                LEFT JOIN user_phones primary_phone
+                    ON primary_phone.user_id = u.id
+                   AND primary_phone.is_primary = TRUE
+                LEFT JOIN user_phones extra_phone
+                    ON extra_phone.user_id = u.id
+                   AND extra_phone.is_primary = FALSE
+                LEFT JOIN bank_accounts ba
+                    ON ba.user_id = u.id
+            WHERE u.id = %s
+            GROUP BY u.id,
+                     u.name,
+                     u.role,
+                     u.status,
+                     primary_phone.phone_number,
+                     ba.bank_number,
+                     ba.branch_number,
+                     ba.account_number,
+                     ba.account_holder
+            LIMIT 1
             """,
             (user_id,),
         )
         return cur.fetchone()
-
 
 def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes: int) -> None:
     phone_number = (phone_number or "").strip()
