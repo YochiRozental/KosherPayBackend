@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from auth.password import hash_secret
+from domain.bank_services import validate_bank_account
 from repositories.account_creation_repo import (
     create_user,
     create_user_phone,
@@ -10,7 +11,6 @@ from repositories.account_creation_repo import (
     is_phone_unique_violation,
 )
 from repositories.bank_repo import (
-    get_active_bank_branch,
     normalize_account_number,
     normalize_bank_code,
     normalize_branch_code,
@@ -69,17 +69,18 @@ def open_account(
             "error_code": "INVALID_BANK_ACCOUNT_DETAILS",
         }
 
-    bank_branch = get_active_bank_branch(
+    bank_validation = validate_bank_account(
         conn,
         bank_number=bank_number,
         branch_number=branch_number,
+        account_number=account_number,
     )
 
-    if not bank_branch:
+    if not bank_validation["valid"]:
         return {
             "success": False,
-            "message": "בנק או סניף לא קיימים או שאינם פעילים",
-            "error_code": "INVALID_BANK_BRANCH",
+            "message": bank_validation["message"],
+            "error_code": bank_validation["error_code"],
         }
 
     all_phones = [phone_number, *additional_phones]
@@ -136,7 +137,7 @@ def open_account(
             branch_number=branch_number,
             account_number=account_number,
             account_holder=name,
-            bank_branch_id=bank_branch["id"],
+            bank_branch_id=bank_validation["bank_branch_id"],
             verification_status="pending_verification",
         )
 

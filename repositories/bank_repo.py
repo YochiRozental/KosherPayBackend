@@ -5,14 +5,14 @@ def normalize_bank_code(value: str) -> str:
     value = (value or "").strip()
     if not value.isdigit():
         raise ValueError("bank_number must contain digits only")
-    return str(int(value))
+    return value.zfill(2)
 
 
 def normalize_branch_code(value: str) -> str:
     value = (value or "").strip()
     if not value.isdigit():
         raise ValueError("branch_number must contain digits only")
-    return str(int(value))
+    return value.zfill(3)
 
 
 def normalize_account_number(value: str) -> str:
@@ -32,7 +32,7 @@ def get_bank_by_code(conn, *, bank_number: str) -> dict | None:
             """
             SELECT bank_code, bank_name
             FROM bank_branches
-            WHERE bank_code = %s
+            WHERE LPAD(bank_code::text, 2, '0') = %s
             LIMIT 1
             """,
             (bank_code,),
@@ -49,8 +49,8 @@ def get_active_bank_branch(conn, *, bank_number: str, branch_number: str) -> dic
             """
             SELECT id, bank_code, branch_code, bank_name, branch_name, city, address
             FROM bank_branches
-            WHERE bank_code = %s
-              AND branch_code = %s
+            WHERE LPAD(bank_code::text, 2, '0') = %s
+              AND LPAD(branch_code::text, 3, '0') = %s
               AND is_closed = FALSE
             LIMIT 1
             """,
