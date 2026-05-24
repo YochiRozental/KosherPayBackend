@@ -96,6 +96,7 @@ def get_user_profile_by_id(conn, user_id: str) -> dict[str, Any] | None:
         )
         return cur.fetchone()
 
+
 def bump_failed_login(conn, phone_number: str, *, max_failed: int, lock_minutes: int) -> None:
     phone_number = (phone_number or "").strip()
     if not phone_number:
@@ -150,6 +151,7 @@ def update_user_profile_by_id(
         branch_number: str | None = None,
         account_number: str | None = None,
         account_holder: str | None = None,
+        additional_phones: list[str] | None = None,
 ) -> dict[str, Any]:
     user_id = (user_id or "").strip()
     if not user_id:
@@ -291,6 +293,70 @@ def update_user_profile_by_id(
                     VALUES (%s, %s, %s, %s, %s)
                     """,
                     (user_id, bn, br, an, ah),
+                )
+
+    # -----------------------
+    # Additional phones
+    # -----------------------
+    if additional_phones is not None:
+        if not primary:
+            raise ValueError("No primary phone for user")
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT secret_hash
+                FROM user_auth
+                WHERE user_phone_id = %s
+                LIMIT 1
+                """,
+                (primary["id"],),
+            )
+            primary_auth = cur.fetchone()
+
+        if not primary_auth:
+            raise ValueError("Primary auth not found")
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                DELETE FROM user_auth
+                WHERE user_phone_id IN (
+                    SELECT id
+                    FROM user_phones
+                    WHERE user_id = %s
+                      AND is_primary = FALSE
+                )
+                """,
+                (user_id,),
+            )
+
+            cur.execute(
+                """
+                DELETE FROM user_phones
+                WHERE user_id = %s
+                  AND is_primary = FALSE
+                """,
+                (user_id,),
+            )
+
+            for additional_phone in additional_phones:
+                cur.execute(
+                    """
+                    INSERT INTO user_phones (user_id, phone_number, is_primary)
+                    VALUES (%s, %s, FALSE)
+                    RETURNING id
+                    """,
+                    (user_id, additional_phone),
+                )
+                phone_row = cur.fetchone()
+
+                cur.execute(
+                    """
+                    INSERT INTO user_auth (user_phone_id, secret_hash)
+                    VALUES (%s, %s)
+                    """,
+                    (phone_row["id"], primary_auth["secret_hash"]),
                 )
 
     # -----------------------

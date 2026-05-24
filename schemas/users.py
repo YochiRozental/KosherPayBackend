@@ -17,3 +17,5 @@ class UpdateMeRequest(BaseModel):
     branch_number: Optional[str] = None
     account_number: Optional[str] = None
     account_holder: Optional[str] = None
+
+    additional_phones: Optional[list[str]] = None

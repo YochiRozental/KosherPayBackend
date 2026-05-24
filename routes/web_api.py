@@ -225,5 +225,6 @@ async def update_me_route(
         branch_number=payload.branch_number,
         account_number=payload.account_number,
         account_holder=payload.account_holder,
+        additional_phones=payload.additional_phones,
     )
     return ensure_success(result)

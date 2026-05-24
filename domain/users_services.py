@@ -71,6 +71,7 @@ def update_me(
         branch_number: str | None = None,
         account_number: str | None = None,
         account_holder: str | None = None,
+        additional_phones: list[str] | None = None,
 ) -> dict[str, Any]:
     # Normalize
     name = name.strip() if isinstance(name, str) else None
@@ -104,6 +105,25 @@ def update_me(
     if account_holder is not None and not account_holder:
         return {"success": False, "message": "שם בעל חשבון לא תקין"}
 
+    if additional_phones is not None:
+        additional_phones = [
+            p.strip()
+            for p in additional_phones
+            if isinstance(p, str) and p.strip()
+        ]
+    if additional_phones is not None:
+        for additional_phone in additional_phones:
+            if not _PHONE_RE.match(additional_phone):
+                return {"success": False, "message": "טלפון נוסף לא תקין"}
+
+        if phone and phone in additional_phones:
+            return {
+                "success": False,
+                "message": "טלפון נוסף לא יכול להיות זהה לטלפון הראשי",
+            }
+
+        if len(set(additional_phones)) != len(additional_phones):
+            return {"success": False, "message": "יש טלפונים נוספים כפולים"}
     try:
         updated = update_user_profile_by_id(
             conn,
@@ -115,6 +135,7 @@ def update_me(
             branch_number=branch_number,
             account_number=account_number,
             account_holder=account_holder,
+            additional_phones=additional_phones,
         )
     except ValueError:
         return {"success": False, "message": "נתונים לא תקינים"}
