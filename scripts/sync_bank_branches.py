@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import requests
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from db.connection import get_db_connection
-
 
 DATA_GOV_URL = "https://data.gov.il/api/3/action/datastore_search"
 RESOURCE_ID = "2202bada-4baf-45f5-aa61-8c5bad9646d3"
@@ -29,7 +28,36 @@ def normalize_code(value) -> str:
 
 def parse_close_date(value):
     value = str(value or "").strip()
-    return value or None
+
+    if not value:
+        return None
+
+    # מנקה תווים נפוצים שעלולים להגיע מהמקור
+    value = value.replace("\u200f", "").replace("\u200e", "").strip()
+
+    # אם הגיע תאריך עם שעה — לוקחים רק את חלק התאריך
+    value = value.split("T")[0].split(" ")[0].strip()
+
+    formats = (
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y.%m.%d",
+        "%d/%m/%y",
+        "%d-%m-%y",
+        "%d.%m.%y",
+    )
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+
+    print(f"Warning: Could not parse Close_Date value: '{value}'")
+    return None
 
 
 def fetch_all_records() -> list[dict]:
@@ -72,8 +100,9 @@ def upsert_branch(conn, record: dict) -> None:
     city = str(record.get("City") or "").strip() or None
     address = str(record.get("Address") or "").strip() or None
 
-    close_date = parse_close_date(record.get("Close_Date"))
-    is_closed = close_date is not None
+    raw_close_date = str(record.get("Close_Date") or "").strip()
+    close_date = parse_close_date(raw_close_date)
+    is_closed = bool(raw_close_date)
 
     if not bank_code or not branch_code or not bank_name or not branch_name:
         return
