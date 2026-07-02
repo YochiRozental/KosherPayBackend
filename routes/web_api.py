@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
 from auth.dependencies import get_current_user
@@ -26,6 +28,7 @@ from domain.verification_services import (
     reset_secret_after_verification,
 )
 from domain.wallet_services import get_balance
+from integrations.yemot_api import send_flash_call
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
     PaymentRequestRequest,
@@ -47,6 +50,8 @@ from schemas.verification import (
     ForgotSecretResetRequest,
     VerificationResponse,
 )
+
+logger = logging.getLogger("kosherpay")
 
 router = APIRouter(prefix="/api/web", tags=["web"])
 
@@ -85,11 +90,26 @@ async def forgot_secret_start_route(
         request: ForgotSecretStartRequest,
         conn=Depends(get_db),
 ):
+    try:
+        flash_call = send_flash_call(phone_number=request.phone_number)
+    except Exception as e:
+        logger.exception("Failed to send Yemot flash call")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "success": False,
+                "message": "שליחת שיחת האימות נכשלה",
+                "error": str(e),
+            },
+        )
+
     result = start_reset_secret_challenge(
         conn,
         phone_number=request.phone_number,
         channel="web",
-        verify_code=request.verify_code,
+        verify_code=flash_call["verify_code"],
+        provider="yemot",
+        provider_call_id=flash_call.get("provider_call_id"),
     )
 
     if not result.get("success"):

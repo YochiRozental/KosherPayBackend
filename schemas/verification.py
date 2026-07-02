@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 class ForgotSecretStartRequest(BaseModel):
     phone_number: str = Field(..., min_length=7, max_length=20)
-    verify_code: str = Field(..., min_length=4, max_length=4)
 
 
 class ForgotSecretVerifyRequest(BaseModel):
