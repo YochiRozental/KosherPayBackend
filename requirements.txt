@@ -9,3 +9,4 @@ redis==5.0.8
 SQLAlchemy>=2.0
 requests==2.32.3
 il-bank-validator==0.2.2
+pydantic

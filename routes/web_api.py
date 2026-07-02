@@ -20,6 +20,11 @@ from domain.transactions_services import (
     transfer
 )
 from domain.users_services import get_me, update_me, get_user_id_by_phone_service
+from domain.verification_services import (
+    start_reset_secret_challenge,
+    verify_reset_secret_challenge,
+    reset_secret_after_verification,
+)
 from domain.wallet_services import get_balance
 from schemas.auth import OpenAccountRequest, OpenAccountResponse, LoginRequest, LoginResponse
 from schemas.payment_requests import (
@@ -36,6 +41,12 @@ from schemas.payments import (
     TransactionHistoryResponse,
 )
 from schemas.users import UpdateMeRequest, UserMeResponse
+from schemas.verification import (
+    ForgotSecretStartRequest,
+    ForgotSecretVerifyRequest,
+    ForgotSecretResetRequest,
+    VerificationResponse,
+)
 
 router = APIRouter(prefix="/api/web", tags=["web"])
 
@@ -66,6 +77,58 @@ async def login_route(request: LoginRequest, conn=Depends(get_db)):
     result = authenticate_user(conn, request.phone_number, request.secret_code)
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result)
+    return result
+
+
+@router.post("/forgot-secret/start", response_model=VerificationResponse)
+async def forgot_secret_start_route(
+        request: ForgotSecretStartRequest,
+        conn=Depends(get_db),
+):
+    result = start_reset_secret_challenge(
+        conn,
+        phone_number=request.phone_number,
+        channel="web",
+        verify_code=request.verify_code,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+
+    return result
+
+
+@router.post("/forgot-secret/verify", response_model=VerificationResponse)
+async def forgot_secret_verify_route(
+        request: ForgotSecretVerifyRequest,
+        conn=Depends(get_db),
+):
+    result = verify_reset_secret_challenge(
+        conn,
+        challenge_id=request.challenge_id,
+        code=request.code,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+
+    return result
+
+
+@router.post("/forgot-secret/reset", response_model=VerificationResponse)
+async def forgot_secret_reset_route(
+        request: ForgotSecretResetRequest,
+        conn=Depends(get_db),
+):
+    result = reset_secret_after_verification(
+        conn,
+        challenge_id=request.challenge_id,
+        new_secret=request.new_secret,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+
     return result
 
 
