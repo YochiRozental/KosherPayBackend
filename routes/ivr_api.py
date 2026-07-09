@@ -31,7 +31,12 @@ from domain.users_services import (
     get_me, get_user_id_by_phone_service
 )
 from domain.wallet_services import get_balance
-from ivr.auth import require_auth
+from ivr.auth import (
+    forgot_secret_reset,
+    forgot_secret_start,
+    forgot_secret_verify,
+    require_auth,
+)
 from ivr.commands import (
     YemotFile,
     YemotMessage,
@@ -50,7 +55,12 @@ from ivr.navigation import go_back, repeatable_read
 from ivr.parsers import get_param, parse_amount, get_param_or_session
 from ivr.profile import current_value_msg, to_update_kwargs, get_user_value
 from ivr.prompts import yemot_prompt, SR_STATUS_KEY_MAP, HIST_TYPE_TO_PROMPT, yemot_error
-from ivr.session import init_yemot_session, session_set, session_get, session_delete
+from ivr.session import (
+    init_yemot_session,
+    session_set,
+    session_get,
+    session_delete,
+)
 
 logger = logging.getLogger("kosherpay")
 router = APIRouter(prefix="/ivr", tags=["ivr"])
@@ -63,10 +73,21 @@ def ivr_api(request: Request, conn=Depends(get_db)):
     action = get_param(request, "action")
     phone_number = get_param(request, "ApiPhone") or get_param(request, "phone_number")
 
+    if get_param(request, "hangup") == "yes":
+        return "OK"
+
     if not action:
         return "API is working no action"
 
     if action == "check_existence":
+        new_secret = get_param(request, "new_secret")
+        if new_secret:
+            return forgot_secret_reset(conn, request, new_secret)
+
+        forgot_secret_code = get_param(request, "forgot_secret_code")
+        if forgot_secret_code:
+            return forgot_secret_verify(conn, request, forgot_secret_code)
+
         if not phone_number:
             return yemot_error("ERR_PHONE_NOT_FOUND", hangup=True)
 
@@ -81,12 +102,18 @@ def ivr_api(request: Request, conn=Depends(get_db)):
         secret_code = get_param(request, "secret_code")
         if not secret_code:
             return yemot_read(
-                yemot_prompt("AUTH_ENTER_SECRET"),
+                yemot_prompt("AUTH_ENTER_SECRET_WITH_RESET"),
                 "secret_code",
-                6, 6,
+                1,
+                6,
                 read_type="Digits",
-                confirm=True
+                confirm=False,
             )
+
+        if secret_code == "9":
+            session_delete(request, "secret_code")
+            session_set(request, "phone", phone_number)
+            return forgot_secret_start(conn, request, phone_number)
 
         auth = authenticate_user(conn, phone_number, secret_code)
         session_delete(request, "secret_code")
@@ -95,10 +122,9 @@ def ivr_api(request: Request, conn=Depends(get_db)):
             session_delete(request, "authenticated", "user_id")
             return yemot_error("AUTH_WRONG_CODE", go_to_folder="/")
 
+        session_set(request, "phone", phone_number)
         session_set(request, "user_id", auth["user"]["id"])
         session_set(request, "authenticated", "1")
-        session_set(request, "phone", phone_number)
-
         session_set(request, "welcome_played", "0")
         session_set(request, "user_name", auth["user"].get("name", ""))
 
