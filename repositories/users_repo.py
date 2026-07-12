@@ -25,6 +25,35 @@ def get_user_id_by_phone(conn, phone_number: str) -> str | None:
         return row["user_id"] if row else None
 
 
+def get_primary_user_phone_by_user_id(
+        conn,
+        *,
+        user_id: str,
+) -> dict[str, Any] | None:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT up.id::text AS user_phone_id,
+                   up.user_id::text AS user_id,
+                   up.phone_number,
+                   up.is_primary,
+                   up.is_verified
+            FROM user_phones up
+            JOIN users u ON u.id = up.user_id
+            WHERE up.user_id = %s
+              AND up.is_primary = TRUE
+              AND u.deleted_at IS NULL
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        return cur.fetchone()
+
+
 def get_user_for_auth(conn, phone_number: str) -> dict[str, Any] | None:
     phone_number = (phone_number or "").strip()
     if not phone_number:

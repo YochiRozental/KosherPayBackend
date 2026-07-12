@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from auth.password import hash_secret, verify_secret
+from repositories.users_repo import get_primary_user_phone_by_user_id
 from repositories.verification_challenges_repo import (
     cancel_active_challenges,
     create_challenge,
@@ -58,6 +59,61 @@ def get_user_phone_by_phone(conn, *, phone_number: str) -> dict[str, Any] | None
     }
 
 
+def get_reset_secret_target(
+        conn,
+        *,
+        phone_number: str,
+) -> dict[str, Any]:
+    """
+    מזהה את החשבון לפי כל מספר משויך,
+    ומחזיר את הטלפון הראשי שאליו יש לשלוח את שיחת האימות.
+    """
+
+    phone_number = _normalize_phone(phone_number)
+
+    if not phone_number:
+        return {
+            "success": False,
+            "message": "חסר מספר טלפון",
+        }
+
+    requesting_phone = get_user_phone_by_phone(
+        conn,
+        phone_number=phone_number,
+    )
+
+    if not requesting_phone:
+        return {
+            "success": False,
+            "message": "מספר הטלפון אינו קיים במערכת",
+        }
+
+    if requesting_phone["user_status"] != "active":
+        return {
+            "success": False,
+            "message": "החשבון אינו פעיל",
+        }
+
+    primary_phone = get_primary_user_phone_by_user_id(
+        conn,
+        user_id=requesting_phone["user_id"],
+    )
+
+    if not primary_phone:
+        return {
+            "success": False,
+            "message": "לא נמצא טלפון ראשי בחשבון",
+        }
+
+    return {
+        "success": True,
+        "user_id": requesting_phone["user_id"],
+        "requesting_phone_number": requesting_phone["phone_number"],
+        "primary_user_phone_id": primary_phone["user_phone_id"],
+        "primary_phone_number": primary_phone["phone_number"],
+    }
+
+
 def start_reset_secret_challenge(
         conn,
         *,
@@ -68,41 +124,46 @@ def start_reset_secret_challenge(
         provider_call_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    יוצר בקשת שחזור קוד אחרי ש-Flash Call כבר נשלח
-    וקיבלנו מימות המשיח verifyCode.
+    יוצר בקשת שחזור קוד לאחר ששיחת האימות נשלחה
+    לטלפון הראשי של החשבון.
     """
 
     phone_number = _normalize_phone(phone_number)
 
     if channel not in {"ivr", "web"}:
-        return {"success": False, "message": "ערוץ לא תקין"}
-
-    if not phone_number:
-        return {"success": False, "message": "חסר מספר טלפון"}
+        return {
+            "success": False,
+            "message": "ערוץ לא תקין",
+        }
 
     if not verify_code or not verify_code.isdigit():
-        return {"success": False, "message": "קוד אימות לא תקין"}
+        return {
+            "success": False,
+            "message": "קוד אימות לא תקין",
+        }
 
-    user_phone = get_user_phone_by_phone(conn, phone_number=phone_number)
+    target = get_reset_secret_target(
+        conn,
+        phone_number=phone_number,
+    )
 
-    if not user_phone:
-        return {"success": False, "message": "מספר הטלפון אינו קיים במערכת"}
-
-    if user_phone["user_status"] != "active":
-        return {"success": False, "message": "החשבון אינו פעיל"}
+    if not target.get("success"):
+        return target
 
     cancel_active_challenges(
         conn,
-        user_id=user_phone["user_id"],
+        user_id=target["user_id"],
         purpose=RESET_SECRET_PURPOSE,
     )
 
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=CODE_TTL_MINUTES)
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=CODE_TTL_MINUTES,
+    )
 
     challenge = create_challenge(
         conn,
-        user_id=user_phone["user_id"],
-        user_phone_id=user_phone["user_phone_id"],
+        user_id=target["user_id"],
+        user_phone_id=target["primary_user_phone_id"],
         purpose=RESET_SECRET_PURPOSE,
         channel=channel,
         code_hash=hash_secret(verify_code),
@@ -194,14 +255,25 @@ def reset_secret_after_verification(
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE user_auth
+            UPDATE user_auth ua
             SET secret_hash = %s,
                 failed_attempts = 0,
                 locked_until = NULL
-            WHERE user_phone_id = %s
+            FROM user_phones up
+            WHERE ua.user_phone_id = up.id
+              AND up.user_id = %s
             """,
-            (new_secret_hash, challenge["user_phone_id"]),
+            (
+                new_secret_hash,
+                challenge["user_id"],
+            ),
         )
+
+        if cur.rowcount == 0:
+            return {
+                "success": False,
+                "message": "לא נמצאו פרטי התחברות לעדכון",
+            }
 
     mark_challenge_used(conn, challenge_id=challenge_id)
 

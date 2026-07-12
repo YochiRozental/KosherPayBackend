@@ -1,6 +1,8 @@
+import requests
 from fastapi import Request
 
 from domain.verification_services import (
+    get_reset_secret_target,
     reset_secret_after_verification,
     start_reset_secret_challenge,
     verify_reset_secret_challenge,
@@ -47,24 +49,58 @@ def forgot_secret_ask_new_secret() -> str:
     )
 
 
-def forgot_secret_start(conn, request: Request, phone_number: str) -> str:
-    flash_call = send_flash_call(phone_number=phone_number)
+def forgot_secret_start(
+        conn,
+        request: Request,
+        phone_number: str,
+) -> str:
+    target = get_reset_secret_target(
+        conn,
+        phone_number=phone_number,
+    )
+
+    if not target.get("success"):
+        return yemot_error(
+            "FORGOT_SECRET_START_FAILED",
+            go_to_folder="/",
+        )
+
+    try:
+        flash_call = send_flash_call(
+            phone_number=target["primary_phone_number"],
+        )
+    except (requests.RequestException, RuntimeError, ValueError):
+        return yemot_error(
+            "FORGOT_SECRET_CALL_FAILED",
+            go_to_folder="/",
+        )
 
     if not flash_call.get("verify_code"):
-        return yemot_error("FORGOT_SECRET_CALL_FAILED", go_to_folder="/")
+        return yemot_error(
+            "FORGOT_SECRET_CALL_FAILED",
+            go_to_folder="/",
+        )
 
     result = start_reset_secret_challenge(
         conn,
         phone_number=phone_number,
         channel="ivr",
         verify_code=flash_call["verify_code"],
+        provider="yemot",
         provider_call_id=flash_call.get("provider_call_id"),
     )
 
     if not result.get("success"):
-        return yemot_error("FORGOT_SECRET_START_FAILED", go_to_folder="/")
+        return yemot_error(
+            "FORGOT_SECRET_START_FAILED",
+            go_to_folder="/",
+        )
 
-    session_set(request, "forgot_secret_challenge_id", result["challenge_id"])
+    session_set(
+        request,
+        "forgot_secret_challenge_id",
+        result["challenge_id"],
+    )
 
     return forgot_secret_ask_verify_code()
 

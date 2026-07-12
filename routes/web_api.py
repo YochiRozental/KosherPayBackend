@@ -23,6 +23,7 @@ from domain.transactions_services import (
 )
 from domain.users_services import get_me, update_me, get_user_id_by_phone_service
 from domain.verification_services import (
+    get_reset_secret_target,
     start_reset_secret_challenge,
     verify_reset_secret_challenge,
     reset_secret_after_verification,
@@ -90,10 +91,24 @@ async def forgot_secret_start_route(
         request: ForgotSecretStartRequest,
         conn=Depends(get_db),
 ):
+    target = get_reset_secret_target(
+        conn,
+        phone_number=request.phone_number,
+    )
+
+    if not target.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=target,
+        )
+
     try:
-        flash_call = send_flash_call(phone_number=request.phone_number)
+        flash_call = send_flash_call(
+            phone_number=target["primary_phone_number"],
+        )
     except Exception as e:
         logger.exception("Failed to send Yemot flash call")
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
@@ -113,7 +128,10 @@ async def forgot_secret_start_route(
     )
 
     if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result,
+        )
 
     return result
 
