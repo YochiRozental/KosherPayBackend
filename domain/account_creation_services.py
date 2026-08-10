@@ -143,7 +143,7 @@ def open_account(
 
         return {
             "success": True,
-            "message": "המשתמש נרשם בהצלחה",
+            "message": "ההרשמה הושלמה והחשבון ממתין לאישור מנהל",
             "user_id": str(user_id),
             "bank_account_id": str(bank_account_id),
         }

@@ -396,3 +396,29 @@ def update_user_profile_by_id(
         raise ValueError("User not found after update")
 
     return updated
+
+
+def get_user_auth_state_by_id(
+        conn,
+        *,
+        user_id: str,
+) -> dict[str, Any] | None:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT id::text AS user_id,
+                   role,
+                   status
+            FROM users
+            WHERE id = %s
+              AND deleted_at IS NULL
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+
+        return cur.fetchone()

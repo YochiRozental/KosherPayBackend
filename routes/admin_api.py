@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends
 
 from auth.dependencies import require_admin
 from db.deps import get_db
-from domain.admin_services import get_all_users_service
+from domain.admin_services import (
+    approve_user_service,
+    get_all_users_service,
+    reject_user_service,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -15,3 +19,27 @@ async def get_all_users(
         _admin: dict = Depends(require_admin),
 ):
     return get_all_users_service(conn)
+
+
+@router.patch("/users/{user_id}/approve")
+async def approve_user(
+        user_id: str,
+        conn=Depends(get_db),
+        _admin: dict = Depends(require_admin),
+):
+    return approve_user_service(
+        conn,
+        user_id=user_id,
+    )
+
+
+@router.patch("/users/{user_id}/reject")
+async def reject_user(
+        user_id: str,
+        conn=Depends(get_db),
+        _admin: dict = Depends(require_admin),
+):
+    return reject_user_service(
+        conn,
+        user_id=user_id,
+    )

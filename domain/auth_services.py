@@ -25,15 +25,21 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
 
     row = get_user_for_auth(conn, phone_number)
     if not row:
-        return {"success": False, "message": "פרטי התחברות שגויים"}
+        return {
+            "success": False,
+            "message": "פרטי התחברות שגויים",
+        }
 
     locked_until = row.get("locked_until")
+
     if isinstance(locked_until, datetime):
         locked_until = _as_utc_aware(locked_until)
+
         if locked_until > datetime.now(timezone.utc):
-            return {"success": False, "message": "החשבון נעול זמנית עקב ניסיונות כושלים"}
-    else:
-        locked_until = None
+            return {
+                "success": False,
+                "message": "החשבון נעול זמנית עקב ניסיונות כושלים",
+            }
 
     if not verify_secret(secret_code, row["secret_hash"]):
         bump_failed_login(
@@ -42,7 +48,41 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
             max_failed=AUTH_MAX_FAILED,
             lock_minutes=AUTH_LOCK_MINUTES,
         )
-        return {"success": False, "message": "פרטי התחברות שגויים"}
+        return {
+            "success": False,
+            "message": "פרטי התחברות שגויים",
+        }
+
+    # הקוד הסודי נכון, לכן אפשר לחשוף למשתמש את מצב החשבון
+    status = row["status"]
+
+    if status == "pending_approval":
+        return {
+            "success": False,
+            "message": "החשבון ממתין לאישור מנהל",
+            "error_code": "ACCOUNT_PENDING_APPROVAL",
+        }
+
+    if status == "rejected":
+        return {
+            "success": False,
+            "message": "החשבון לא אושר",
+            "error_code": "ACCOUNT_REJECTED",
+        }
+
+    if status == "blocked":
+        return {
+            "success": False,
+            "message": "החשבון חסום",
+            "error_code": "ACCOUNT_BLOCKED",
+        }
+
+    if status != "active":
+        return {
+            "success": False,
+            "message": "לא ניתן להתחבר לחשבון",
+            "error_code": "ACCOUNT_NOT_ACTIVE",
+        }
 
     reset_failed_login(conn, phone_number)
 
@@ -51,7 +91,17 @@ def authenticate_user(conn, phone_number: str, secret_code: str) -> dict:
 
     return {
         "success": True,
-        "access_token": create_access_token(user_id=user_id, role=role, phone_number=phone_number),
-        "refresh_token": create_refresh_token(user_id=user_id),
-        "user": {"id": user_id, "role": role, "phone": phone_number},
+        "access_token": create_access_token(
+            user_id=user_id,
+            role=role,
+            phone_number=phone_number,
+        ),
+        "refresh_token": create_refresh_token(
+            user_id=user_id,
+        ),
+        "user": {
+            "id": user_id,
+            "role": role,
+            "phone": phone_number,
+        },
     }

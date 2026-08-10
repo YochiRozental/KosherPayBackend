@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 from psycopg.rows import dict_row
 
 
@@ -26,3 +27,37 @@ def get_users_overview(conn) -> list[dict[str, Any]]:
         )
 
         return cur.fetchall()
+
+
+def approve_pending_user(conn, *, user_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET status = 'active',
+                updated_at = NOW()
+            WHERE id = %s
+              AND status = 'pending_approval'
+              AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+
+        return cur.rowcount > 0
+
+
+def reject_pending_user(conn, *, user_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET status = 'rejected',
+                updated_at = NOW()
+            WHERE id = %s
+              AND status = 'pending_approval'
+              AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+
+        return cur.rowcount > 0

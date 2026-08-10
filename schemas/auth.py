@@ -30,3 +30,4 @@ class LoginResponse(BaseModel):
     refresh_token: str | None = None
     user: dict | None = None
     message: str | None = None
+    error_code: str | None = None

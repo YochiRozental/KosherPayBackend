@@ -13,6 +13,8 @@ from auth.jwt_utils import (
     InvalidTokenError,
     InvalidTokenTypeError,
 )
+from db.deps import get_db
+from repositories.users_repo import get_user_auth_state_by_id
 
 logger = logging.getLogger("kosherpay.auth")
 security = HTTPBearer(auto_error=False)
@@ -28,11 +30,12 @@ def _unauthorized(message: str) -> HTTPException:
 
 async def get_current_user(
         credentials: HTTPAuthorizationCredentials | None = Security(security),
+        conn=Depends(get_db),
 ) -> dict[str, Any]:
     if not credentials or not credentials.credentials:
         raise _unauthorized("Missing Bearer token")
 
-    token = credentials.credentials
+    token: str = str(credentials.credentials)
 
     try:
         payload = decode_token(token)
@@ -48,15 +51,31 @@ async def get_current_user(
         raise _unauthorized("Invalid token")
 
     user_id = payload.get("sub")
-    role = payload.get("role")
 
-    if not user_id or not role:
-        logger.warning("Token payload missing sub/role")
+    if not user_id:
+        logger.warning("Token payload missing sub")
         raise _unauthorized("Invalid token")
 
+    user = get_user_auth_state_by_id(
+        conn,
+        user_id=str(user_id),
+    )
+
+    if not user:
+        logger.info("User not found or deleted")
+        raise _unauthorized("User is not active")
+
+    if user["status"] != "active":
+        logger.info(
+            "Inactive user attempted authenticated request: user_id=%s status=%s",
+            user_id,
+            user["status"],
+        )
+        raise _unauthorized("User is not active")
+
     return {
-        "user_id": str(user_id),
-        "role": role,
+        "user_id": str(user["user_id"]),
+        "role": user["role"],
         "phone": payload.get("phone"),
     }
 

@@ -14,7 +14,7 @@ def create_user(conn, *, name: str) -> UUID:
         cur.execute(
             """
             INSERT INTO users (name, role, status)
-            VALUES (%s, 'user', 'active') RETURNING id
+            VALUES (%s, 'user', 'pending_approval') RETURNING id
             """,
             (name,),
         )
