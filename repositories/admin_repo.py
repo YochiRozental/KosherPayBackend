@@ -61,3 +61,37 @@ def reject_pending_user(conn, *, user_id: str) -> bool:
         )
 
         return cur.rowcount > 0
+
+
+def block_active_user(conn, *, user_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET status = 'blocked',
+                updated_at = NOW()
+            WHERE id = %s
+              AND status = 'active'
+              AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+
+        return cur.rowcount > 0
+
+
+def unblock_user(conn, *, user_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE users
+            SET status = 'active',
+                updated_at = NOW()
+            WHERE id = %s
+              AND status = 'blocked'
+              AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+
+        return cur.rowcount > 0
